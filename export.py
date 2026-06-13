@@ -1,5 +1,6 @@
 # export.py — exports scored results to Excel with formatting
 
+import os
 import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.styles import (PatternFill, Font, Alignment, Border, Side)
@@ -85,6 +86,7 @@ def format_sheet(ws, df, title):
         "E": 10,  # roic
         "F": 16,  # gm_stability
         "G": 18,  # net_debt_ebitda
+        "H": 11,  # n_factors
     }
     for col, width in col_widths.items():
         ws.column_dimensions[col].width = width
@@ -171,8 +173,9 @@ def add_methodology_tab(wb):
 
 def export(results):
     output_path = "output/screener_results.xlsx"
+    os.makedirs("output", exist_ok=True)
     cols = ["ticker", "composite", "ev_ebit", "price_fcf",
-            "roic", "gm_stability", "net_debt_ebitda"]
+            "roic", "gm_stability", "net_debt_ebitda", "n_factors"]
 
     # Round values
     results = results.copy()

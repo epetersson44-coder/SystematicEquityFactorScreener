@@ -4,7 +4,7 @@ import pandas as pd
 import numpy as np
 from fetch import fetch_all
 from factors import calculate_factors
-from config import TICKERS, WEIGHTS
+from config import TICKERS, WEIGHTS, MIN_FACTORS
 
 def build_factor_table(tickers):
     rows = []
@@ -31,12 +31,16 @@ def score(df):
         else:
             scored[f"{factor}_pct"] = df[factor].rank(ascending=False, pct=True) * 100
 
-    # Composite weighted score
-    scored["composite"] = sum(
-        scored[f"{factor}_pct"] * weight
-        for factor, weight in WEIGHTS.items()
-        if f"{factor}_pct" in scored.columns
-    )
+    # Composite weighted score — averaged over the factors each company
+    # actually has, re-normalizing the weights. (A plain weighted sum lets
+    # one missing factor turn the whole composite NaN, silently burying
+    # the company at the bottom of the ranking.)
+    pct_cols = [f"{f}_pct" for f in WEIGHTS if f"{f}_pct" in scored.columns]
+    weights = pd.Series({f"{f}_pct": w for f, w in WEIGHTS.items() if f"{f}_pct" in scored.columns})
+    pcts = scored[pct_cols]
+    scored["composite"] = pcts.mul(weights).sum(axis=1) / pcts.notna().mul(weights).sum(axis=1)
+    scored["n_factors"] = pcts.notna().sum(axis=1)
+    scored.loc[scored["n_factors"] < MIN_FACTORS, "composite"] = float("nan")
 
     return scored.sort_values("composite", ascending=False)
 
@@ -48,4 +52,4 @@ if __name__ == "__main__":
 
     results = score(df)
     print("\nFinal rankings:")
-    print(results[["ticker", "composite"]].to_string(index=False))
+    print(results[["ticker", "composite", "n_factors"]].to_string(index=False))

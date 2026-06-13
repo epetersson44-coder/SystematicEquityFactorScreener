@@ -19,3 +19,7 @@ TICKERS = [
 ]
 
 MIN_YEARS_HISTORY = 3
+
+# Companies with fewer ranked factors than this are excluded from the
+# composite — a score built on 1–2 factors flatters whatever data survived
+MIN_FACTORS = 4
