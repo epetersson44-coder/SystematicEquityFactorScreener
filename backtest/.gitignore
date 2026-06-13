@@ -1,0 +1,3 @@
+# Cached price data — re-fetchable, not source. Don't commit.
+cache/
+__pycache__/
