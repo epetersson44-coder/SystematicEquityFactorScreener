@@ -11,6 +11,12 @@
 #   "close"               — decide and fill at the same bar's close. Optimistic
 #                           (mild look-ahead); used to validate accounting against
 #                           the analytic buy-and-hold, and as a best-case bound.
+#
+# Idle cash can earn a risk-free rate (`cash_rate`). Default 0 keeps the engine's
+# behaviour — and the analytic-baseline validation — unchanged. Set it (e.g. 0.04)
+# for an honest comparison: a strategy that sits in cash through bear markets
+# (like the SMA) really would collect T-bill interest while it waits; scoring that
+# cash at 0% understates it. Pair cash_rate with the same rf in metrics.sharpe().
 
 import numpy as np
 import pandas as pd
@@ -33,6 +39,10 @@ class Portfolio:
         `cost` is an optional callable (delta_shares, price) -> dollar fee.
         Returns (delta_shares, fee).
         """
+        if not 0.0 <= target_weight <= 1.0:
+            raise ValueError(
+                f"target_weight must be in [0, 1] (long-only, no leverage/short); got {target_weight}"
+            )
         eq = self.equity(price)
         target_shares = target_weight * eq / price
         delta = target_shares - self.shares
@@ -42,13 +52,16 @@ class Portfolio:
         return delta, fee
 
 
-def run(prices, strategy, initial_capital=10_000, cost=None, fill="next_open"):
+def run(prices, strategy, initial_capital=10_000, cost=None, fill="next_open",
+        cash_rate=0.0, periods_per_year=252):
     """Walk `prices` bar by bar applying `strategy`; return the equity curve.
 
     prices: DataFrame with Open/Close indexed by date (from backtest.data).
     strategy: object with target_weight(history) -> weight in [0, 1].
     cost: optional callable (delta_shares, price) -> dollar fee (None = free).
     fill: "next_open" (honest, default) or "close" (optimistic, for validation).
+    cash_rate: annual risk-free rate earned on idle cash (default 0 = no interest,
+        which leaves the analytic-baseline validation exact). Accrued daily.
     """
     pf = Portfolio(initial_capital)
     opens = prices["Open"].to_numpy()
@@ -56,8 +69,11 @@ def run(prices, strategy, initial_capital=10_000, cost=None, fill="next_open"):
     n = len(prices)
     equity = np.empty(n)
     pending = None
+    daily_cash_factor = 1.0 + cash_rate / periods_per_year
 
     for i in range(n):
+        if cash_rate:                                      # one day passes: idle
+            pf.cash *= daily_cash_factor                   # cash earns the rf rate
         if fill == "next_open":
             if pending is not None:                        # yesterday's decision...
                 pf.rebalance(pending, opens[i], cost)      # ...fills at today's open

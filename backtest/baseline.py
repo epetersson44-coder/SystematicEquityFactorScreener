@@ -14,15 +14,20 @@ def buy_and_hold(prices, initial_capital=INITIAL_CAPITAL):
     return close / close.iloc[0] * initial_capital
 
 
-def print_summary(name, equity, initial_capital=INITIAL_CAPITAL):
-    s = metrics.summary(equity)
+def print_summary(name, equity, initial_capital=INITIAL_CAPITAL, rf=0.0):
+    s = metrics.summary(equity, rf=rf)
+    yrs = s["max_dd_duration_days"] / 365.25
     print(f"\n=== {name} ===")
     print(f"period        {s['start']} -> {s['end']}")
     print(f"final value   ${s['final_value']:,.0f}   (from ${initial_capital:,})")
     print(f"total return  {s['total_return'] * 100:,.1f}%")
     print(f"CAGR          {s['cagr'] * 100:.2f}%")
-    print(f"Sharpe        {s['sharpe']:.2f}   (rf=0)")
+    print(f"volatility    {s['volatility'] * 100:.1f}%   (annualized)")
+    print(f"Sharpe        {s['sharpe']:.2f}   (rf={rf:.0%})")
+    print(f"Sortino       {s['sortino']:.2f}")
+    print(f"Calmar        {s['calmar']:.2f}   (CAGR / |max DD|)")
     print(f"max drawdown  {s['max_drawdown'] * 100:.1f}%")
+    print(f"max DD length {s['max_dd_duration_days']} days   ({yrs:.1f} yr underwater)")
 
 
 if __name__ == "__main__":
