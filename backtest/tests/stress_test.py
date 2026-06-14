@@ -17,6 +17,7 @@ import pandas as pd
 from backtest import metrics, baseline, costs
 from backtest.engine import Portfolio, run
 from backtest.strategy import Strategy, BuyAndHold, SMACrossover
+from backtest.tests._helpers import make_df, random_walk as make_rw, ConstantWeight as ConstW
 import backtest.data as data
 
 warnings.simplefilter("ignore")          # we WANT to see numeric edge behavior raw
@@ -27,20 +28,7 @@ def record(status, name, detail=""):
     print(f"  {status:4s}  {name}" + (f"  — {detail}" if detail else ""))
 
 
-# ---------------------------------------------------------------- helpers
-def make_df(closes, opens=None):
-    closes = np.asarray(closes, dtype=float)
-    opens = closes if opens is None else np.asarray(opens, dtype=float)
-    idx = pd.bdate_range("1990-01-01", periods=len(closes), name="Date")
-    return pd.DataFrame(
-        {"Open": opens, "High": np.maximum(opens, closes),
-         "Low": np.minimum(opens, closes), "Close": closes,
-         "Volume": np.ones(len(closes))}, index=idx)
-
-class ConstW(Strategy):
-    def __init__(self, w): self.w = w
-    def target_weight(self, h): return self.w
-
+# ---------------------------------------- stress-only test doubles (shared ones in _helpers)
 class Flipper(Strategy):
     """Turnover bomb: alternates fully-in / fully-out every bar."""
     def target_weight(self, h): return float(len(h) % 2)
@@ -274,13 +262,7 @@ def probe_real_spy_if_cached():
            f"CAGR {s['cagr']*100:.2f}% Sharpe {s['sharpe']:.2f} DDdur {s['max_dd_duration_days']}d")
 
 
-# small utilities used above
-_rng = np.random.default_rng(42)
-def make_rw(n, p0=100.0, vol=0.01):
-    """Deterministic geometric random walk, strictly positive."""
-    steps = _rng.normal(0, vol, n)
-    return p0 * np.exp(np.cumsum(steps))
-
+# small utility used above (make_df / make_rw / ConstW come from _helpers)
 def _poke(df, i, col, val):
     d = df.copy(); d.iloc[i, d.columns.get_loc(col)] = val; return d
 

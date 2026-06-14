@@ -3,8 +3,7 @@
 
 from backtest.data import get_prices
 from backtest import metrics
-
-INITIAL_CAPITAL = 10_000
+from backtest.constants import INITIAL_CAPITAL
 
 
 def buy_and_hold(prices, initial_capital=INITIAL_CAPITAL):

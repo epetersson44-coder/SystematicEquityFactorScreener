@@ -11,7 +11,12 @@
 import numpy as np
 import pandas as pd
 
-TRADING_DAYS = 252
+from backtest.constants import TRADING_DAYS
+
+
+def _daily_returns(equity):
+    """Daily simple returns of an equity curve, first (NaN) row dropped."""
+    return equity.pct_change().dropna()
 
 
 def total_return(equity):
@@ -29,7 +34,7 @@ def cagr(equity):
 
 def annualized_volatility(equity, periods_per_year=TRADING_DAYS):
     """Annualized standard deviation of daily simple returns."""
-    ret = equity.pct_change().dropna()
+    ret = _daily_returns(equity)
     return ret.std(ddof=1) * np.sqrt(periods_per_year)
 
 
@@ -43,7 +48,7 @@ def sharpe(equity, rf=0.0, periods_per_year=TRADING_DAYS):
     same rf to both this and the engine's cash_rate. Chan's rough bar to even
     bother trading: annualized Sharpe >= ~1.
     """
-    ret = equity.pct_change().dropna()
+    ret = _daily_returns(equity)
     sd = ret.std(ddof=1)
     if sd == 0:
         return np.nan
@@ -57,7 +62,7 @@ def sortino(equity, rf=0.0, periods_per_year=TRADING_DAYS):
     Upside swings aren't risk; Sortino divides excess return by the RMS of the
     negative excess returns only. Higher = better. NaN if there's no downside.
     """
-    ret = equity.pct_change().dropna()
+    ret = _daily_returns(equity)
     excess = ret - rf / periods_per_year
     downside = excess[excess < 0]
     if len(downside) == 0:
@@ -85,8 +90,7 @@ def max_drawdown_duration(equity):
     curve never recovers by the end, that trailing stretch counts (worst case —
     still bleeding at the finish).
     """
-    running_max = equity.to_numpy()
-    running_max = np.maximum.accumulate(running_max)
+    running_max = np.maximum.accumulate(equity.to_numpy())
     underwater = equity.to_numpy() < running_max            # strictly below peak
     dates = equity.index
     longest = pd.Timedelta(0)

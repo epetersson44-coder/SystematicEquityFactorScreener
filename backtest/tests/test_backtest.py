@@ -17,36 +17,9 @@ import pandas as pd
 
 from backtest import metrics, baseline, costs
 from backtest.engine import Portfolio, run
-from backtest.strategy import Strategy, BuyAndHold, SMACrossover
+from backtest.strategy import BuyAndHold, SMACrossover
+from backtest.tests._helpers import make_df, rising, ConstantWeight
 import backtest.data as data
-
-
-# ---------------------------------------------------------------- helpers
-def make_df(closes, opens=None):
-    """Build an OHLC frame with a daily business-day index from a close series."""
-    closes = np.asarray(closes, dtype=float)
-    if opens is None:
-        opens = closes
-    opens = np.asarray(opens, dtype=float)
-    idx = pd.bdate_range("2010-01-04", periods=len(closes), name="Date")
-    return pd.DataFrame(
-        {"Open": opens, "High": np.maximum(opens, closes),
-         "Low": np.minimum(opens, closes), "Close": closes,
-         "Volume": np.ones(len(closes))},
-        index=idx,
-    )
-
-
-def rising(n, daily=0.001, p0=100.0):
-    return p0 * (1 + daily) ** np.arange(n)
-
-
-class ConstantWeight(Strategy):
-    """Test strategy that always returns a fixed weight."""
-    def __init__(self, w):
-        self.w = w
-    def target_weight(self, history):
-        return self.w
 
 
 # ---------------------------------------------------------------- metrics

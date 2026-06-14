@@ -21,6 +21,8 @@
 import numpy as np
 import pandas as pd
 
+from backtest.constants import INITIAL_CAPITAL, TRADING_DAYS
+
 
 class Portfolio:
     """Cash + a single asset position. (Multi-asset arrives with the Phase 3 universe.)"""
@@ -52,8 +54,8 @@ class Portfolio:
         return delta, fee
 
 
-def run(prices, strategy, initial_capital=10_000, cost=None, fill="next_open",
-        cash_rate=0.0, periods_per_year=252):
+def run(prices, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open",
+        cash_rate=0.0, periods_per_year=TRADING_DAYS):
     """Walk `prices` bar by bar applying `strategy`; return the equity curve.
 
     prices: DataFrame with Open/Close indexed by date (from backtest.data).
