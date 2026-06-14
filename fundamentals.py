@@ -49,6 +49,7 @@ def yfinance_fundamentals(ticker):
 
     return {
         "ticker": ticker,
+        "sector": info.get("sector"),
         "market_cap": info.get("marketCap"),
         "enterprise_value": info.get("enterpriseValue"),          # yfinance gives it directly
         "total_debt": total_debt if total_debt is not None else info.get("totalDebt"),
@@ -61,6 +62,13 @@ def yfinance_fundamentals(ticker):
         "free_cash_flow": _yf_row(cashflow, "Free Cash Flow"),
         "revenue_history": rev_hist,
         "gross_profit_history": gp_hist,
+        # distress-screen (Altman Z) inputs:
+        "revenue": rev_hist[0] if rev_hist else None,
+        "total_assets": _yf_row(balance, "Total Assets"),
+        "total_liabilities": _yf_row(balance, "Total Liabilities Net Minority Interest", "Total Liabilities"),
+        "current_assets": _yf_row(balance, "Current Assets", "Total Current Assets"),
+        "current_liabilities": _yf_row(balance, "Current Liabilities", "Total Current Liabilities"),
+        "retained_earnings": _yf_row(balance, "Retained Earnings"),
     }
 
 
@@ -88,6 +96,10 @@ def _simfin_load():
     _SIMFIN["balance"] = sf.load_balance(variant="annual", market="us")
     _SIMFIN["cashflow"] = sf.load_cashflow(variant="annual", market="us")
     _SIMFIN["prices"] = sf.load_shareprices(variant="latest", market="us")
+    # ticker -> GICS-style Sector (for excluding financials/REITs)
+    companies = sf.load_companies(market="us")
+    id_to_sector = sf.load_industries()["Sector"].to_dict()
+    _SIMFIN["sector"] = {t: id_to_sector.get(iid) for t, iid in companies["IndustryId"].items()}
     return _SIMFIN
 
 
@@ -125,6 +137,7 @@ def simfin_fundamentals(ticker):
 
     return {
         "ticker": ticker,
+        "sector": d["sector"].get(ticker),
         "market_cap": market_cap,
         "enterprise_value": (market_cap + total_debt - cash) if (market_cap and cash is not None) else None,
         "total_debt": total_debt,
@@ -136,6 +149,13 @@ def simfin_fundamentals(ticker):
         "free_cash_flow": (ocf + capex) if (ocf is not None and capex is not None) else None,
         "revenue_history": _simfin_history(d["income"], ticker, "Revenue"),
         "gross_profit_history": _simfin_history(d["income"], ticker, "Gross Profit"),
+        # distress-screen (Altman Z) inputs:
+        "revenue": g(inc, "Revenue"),
+        "total_assets": g(bal, "Total Assets"),
+        "total_liabilities": g(bal, "Total Liabilities"),
+        "current_assets": g(bal, "Total Current Assets"),
+        "current_liabilities": g(bal, "Total Current Liabilities"),
+        "retained_earnings": g(bal, "Retained Earnings"),
     }
 
 

@@ -59,6 +59,22 @@ def get_net_debt_ebitda(f):
     return None
 
 
+def altman_z(f):
+    """Altman Z-score (original, public-firm form) — bankruptcy/distress gauge.
+    Z = 1.2·(WC/TA) + 1.4·(RE/TA) + 3.3·(EBIT/TA) + 0.6·(MVE/TL) + 1.0·(Sales/TA).
+    Zones: >2.99 safe · 1.81–2.99 grey · <1.81 distress. None if inputs missing."""
+    ta, tl = f.get("total_assets"), f.get("total_liabilities")
+    if not ta or not tl:
+        return None
+    re, ebit, mve, sales = (f.get("retained_earnings"), f.get("ebit"),
+                            f.get("market_cap"), f.get("revenue"))
+    if None in (re, ebit, mve, sales):
+        return None
+    wc = (f.get("current_assets") or 0) - (f.get("current_liabilities") or 0)
+    return (1.2 * wc / ta + 1.4 * re / ta + 3.3 * ebit / ta
+            + 0.6 * mve / tl + 1.0 * sales / ta)
+
+
 def calculate_factors(f):
     """Compute all 5 factors from a canonical fundamentals dict."""
     return {
