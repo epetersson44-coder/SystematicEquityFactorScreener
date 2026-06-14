@@ -2,17 +2,16 @@
 
 import pandas as pd
 import numpy as np
-from fetch import fetch_all
+from fundamentals import get_fundamentals
 from factors import calculate_factors
 from config import TICKERS, WEIGHTS, MIN_FACTORS
 
-def build_factor_table(tickers):
+def build_factor_table(tickers, source="yfinance"):
     rows = []
     for ticker in tickers:
         try:
-            data = fetch_all(ticker)
-            factors = calculate_factors(data)
-            rows.append(factors)
+            f = get_fundamentals(ticker, source=source)
+            rows.append(calculate_factors(f))
         except Exception as e:
             print(f"Skipping {ticker}: {e}")
     return pd.DataFrame(rows)

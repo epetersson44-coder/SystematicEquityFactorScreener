@@ -1,99 +1,76 @@
-# factors.py — calculates the 5 factors from raw yfinance data
+# factors.py — the 5 factor recipes, computed from the CANONICAL schema.
+#
+# Source-agnostic: these take a canonical fundamentals dict (from fundamentals.py)
+# and never touch yfinance/SimFin specifics. ONE recipe; the source is swapped
+# upstream by the router. The factor MATH is unchanged from the original yfinance
+# version — only the input contract moved to the canonical schema.
 
 import numpy as np
 
-def _row(df, *labels):
-    # yfinance row labels shift between tickers — try each candidate
-    for label in labels:
-        if label in df.index:
-            return df.loc[label].iloc[0]
+from fundamentals import enterprise_value
+
+
+def get_ev_ebit(f):
+    ev, ebit = enterprise_value(f), f.get("ebit")
+    if ev and ebit and ebit > 0:
+        return ev / ebit
     return None
 
-def get_ev_ebit(info, income):
-    try:
-        ev = info.get("enterpriseValue")
-        ebit = income.loc["EBIT"].iloc[0]
-        if ev and ebit and ebit > 0:
-            return ev / ebit
-    except:
-        pass
+
+def get_price_fcf(f):
+    mc, fcf = f.get("market_cap"), f.get("free_cash_flow")
+    if mc and fcf and fcf > 0:
+        return mc / fcf
     return None
 
-def get_price_fcf(info, cashflow):
-    try:
-        market_cap = info.get("marketCap")
-        fcf = cashflow.loc["Free Cash Flow"].iloc[0]
-        if market_cap and fcf and fcf > 0:
-            return market_cap / fcf
-    except:
-        pass
+
+def get_roic(f):
+    ebit, tax_rate, equity = f.get("ebit"), f.get("tax_rate"), f.get("equity")
+    if ebit is None or tax_rate is None or equity is None:
+        return None
+    nopat = ebit * (1 - tax_rate)
+    # Invested capital = debt + equity − cash. (Assets − liabilities is just equity
+    # → that's ROE, and leverage would inflate the score.)
+    invested_capital = (f.get("total_debt") or 0) + equity - (f.get("cash") or 0)
+    if invested_capital and invested_capital > 0:
+        return nopat / invested_capital
     return None
 
-def get_roic(income, balance):
-    try:
-        ebit = income.loc["EBIT"].iloc[0]
-        tax_rate = income.loc["Tax Rate For Calcs"].iloc[0]
-        nopat = ebit * (1 - tax_rate)
-        # Invested capital = debt + equity − cash.
-        # (Assets − liabilities is just equity → that's ROE, and leverage
-        # would inflate the score. No Total Debt row = debt-free = 0.)
-        equity = _row(balance, "Stockholders Equity", "Common Stock Equity",
-                      "Total Equity Gross Minority Interest")
-        if equity is None:
-            return None
-        debt = _row(balance, "Total Debt")
-        cash = _row(balance, "Cash And Cash Equivalents",
-                    "Cash Cash Equivalents And Short Term Investments")
-        invested_capital = (debt or 0) + equity - (cash or 0)
-        if invested_capital and invested_capital > 0:
-            return nopat / invested_capital
-    except:
-        pass
+
+def get_gm_stability(f):
+    rev = f.get("revenue_history") or []
+    gp = f.get("gross_profit_history") or []
+    n = min(len(rev), len(gp))
+    # Skip NaN years (yfinance leaves gaps) — the original pandas .std() did this via
+    # skipna; np.std does not. ddof=1 (sample std) matches the original too.
+    margins = [gp[i] / rev[i] for i in range(n)
+               if rev[i] and rev[i] == rev[i] and gp[i] == gp[i]]
+    return float(np.std(margins, ddof=1)) if len(margins) >= 2 else None
+
+
+def get_net_debt_ebitda(f):
+    total_debt, cash, ebitda = f.get("total_debt"), f.get("cash"), f.get("ebitda")
+    # Missing data must stay missing — defaulting debt to 0 made data gaps score as
+    # best-in-class leverage.
+    if total_debt is None or cash is None:
+        return None
+    if ebitda and ebitda > 0:
+        return (total_debt - cash) / ebitda
     return None
 
-def get_gm_stability(income):
-    try:
-        revenue = income.loc["Total Revenue"]
-        gross_profit = income.loc["Gross Profit"]
-        gm = gross_profit / revenue
-        return gm.std()
-    except:
-        pass
-    return None
 
-def get_net_debt_ebitda(info, income):
-    try:
-        total_debt = info.get("totalDebt")
-        total_cash = info.get("totalCash")
-        # Missing data must stay missing — defaulting debt to 0 made
-        # data gaps score as best-in-class leverage
-        if total_debt is None or total_cash is None:
-            return None
-        ebitda = income.loc["EBITDA"].iloc[0]
-        if ebitda and ebitda > 0:
-            return (total_debt - total_cash) / ebitda
-    except:
-        pass
-    return None
-
-def calculate_factors(data):
-    ticker = data["ticker"]
-    info = data["info"]
-    income = data["income"]
-    balance = data["balance"]
-    cashflow = data["cashflow"]
-
+def calculate_factors(f):
+    """Compute all 5 factors from a canonical fundamentals dict."""
     return {
-        "ticker":          ticker,
-        "ev_ebit":         get_ev_ebit(info, income),
-        "price_fcf":       get_price_fcf(info, cashflow),
-        "roic":            get_roic(income, balance),
-        "gm_stability":    get_gm_stability(income),
-        "net_debt_ebitda": get_net_debt_ebitda(info, income),
+        "ticker":          f.get("ticker"),
+        "ev_ebit":         get_ev_ebit(f),
+        "price_fcf":       get_price_fcf(f),
+        "roic":            get_roic(f),
+        "gm_stability":    get_gm_stability(f),
+        "net_debt_ebitda": get_net_debt_ebitda(f),
     }
 
+
 if __name__ == "__main__":
-    from fetch import fetch_all
-    data = fetch_all("CALM")
-    factors = calculate_factors(data)
-    print(factors)
+    from fundamentals import get_fundamentals
+    print(calculate_factors(get_fundamentals("CALM", source="yfinance")))
