@@ -33,10 +33,18 @@ SCALAR_KEYS = (
     "ebit", "ebitda", "tax_rate", "free_cash_flow", "revenue",
     "total_assets", "total_liabilities", "current_assets", "current_liabilities",
     "retained_earnings",
+    # Beneish M-score current-year inputs (all change-ratios vs the prior year):
+    "gross_profit", "receivables", "ppe", "securities", "depreciation", "sga",
+    "cfo", "income_continuing",
 )
 META_KEYS = ("ticker", "sector", "report_date")
 LIST_KEYS = ("revenue_history", "gross_profit_history")
-CANONICAL_KEYS = META_KEYS + SCALAR_KEYS + LIST_KEYS
+# the prior-year line items Beneish needs (a nested `prior` dict on the canonical):
+PRIOR_KEYS = (
+    "revenue", "gross_profit", "receivables", "current_assets", "ppe", "securities",
+    "total_assets", "depreciation", "sga", "current_liabilities", "total_debt",
+)
+CANONICAL_KEYS = META_KEYS + SCALAR_KEYS + LIST_KEYS + ("prior",)
 
 TAX_RATE_MAX = 0.60                                            # clamp: real rates are 0–~40%
 
@@ -51,6 +59,7 @@ def _blank(ticker):
     d["ticker"] = ticker
     d["revenue_history"] = []
     d["gross_profit_history"] = []
+    d["prior"] = {k: None for k in PRIOR_KEYS}
     return d
 
 
@@ -73,6 +82,9 @@ def _normalize(f):
             out[k] = [float(x) for x in (v or []) if x is not None and not _isnan(x)]
         elif k in META_KEYS:
             out[k] = None if _isnan(v) else v
+        elif k == "prior":                                    # nested prior-year scalars
+            out[k] = {pk: (None if (v.get(pk) is None or _isnan(v.get(pk))) else float(v[pk]))
+                      for pk in PRIOR_KEYS}
         else:
             out[k] = None if (v is None or _isnan(v)) else float(v)
     out["tax_rate"] = _clamp_tax(out["tax_rate"])
@@ -89,21 +101,30 @@ def validate_canonical(f):
     for k in SCALAR_KEYS:
         v = f[k]
         assert v is None or (isinstance(v, float) and not _isnan(v)), f"{k} must be float|None"
+    assert isinstance(f["prior"], dict), "prior must be a dict"
+    for pk in PRIOR_KEYS:
+        v = f["prior"][pk]
+        assert v is None or (isinstance(v, float) and not _isnan(v)), f"prior.{pk} must be float|None"
     return True
 
 
 # ----------------------------------------------------------------- yfinance adapter
-def _yf_row(df, *labels):
-    """First matching row's latest NON-NaN value — yfinance row labels shift between
-    tickers, and a present row often has a NaN latest value (callers fall back to the
-    info dict). Treat NaN like missing."""
+def _yf_row_at(df, idx, *labels):
+    """First matching row's value at column `idx` (0 = latest, 1 = prior year), NON-NaN.
+    yfinance row labels shift between tickers, and present rows often have NaN values."""
     for label in labels:
         if label in df.index:
             v = df.loc[label]
-            val = v.iloc[0] if hasattr(v, "iloc") else v
-            if val is not None and not _isnan(val):
-                return val
+            if hasattr(v, "iloc") and len(v) > idx:
+                val = v.iloc[idx]
+                if val is not None and not _isnan(val):
+                    return val
     return None
+
+
+def _yf_row(df, *labels):
+    """Latest (column 0) NON-NaN value for the first matching row label."""
+    return _yf_row_at(df, 0, *labels)
 
 
 def yfinance_fundamentals(ticker):
@@ -141,6 +162,31 @@ def yfinance_fundamentals(ticker):
         "current_assets": _yf_row(balance, "Current Assets", "Total Current Assets"),
         "current_liabilities": _yf_row(balance, "Current Liabilities", "Total Current Liabilities"),
         "retained_earnings": _yf_row(balance, "Retained Earnings"),
+        # Beneish M-score current-year inputs (best-effort yfinance labels):
+        "gross_profit": _yf_row(income, "Gross Profit"),
+        "receivables": _yf_row(balance, "Receivables", "Accounts Receivable", "Net Receivables"),
+        "ppe": _yf_row(balance, "Net PPE", "Net Property Plant And Equipment", "Properties"),
+        "securities": _yf_row(balance, "Investments And Advances", "Long Term Equity Investment", "Other Investments"),
+        "depreciation": _yf_row(income, "Reconciled Depreciation")
+            or _yf_row(cashflow, "Depreciation And Amortization", "Depreciation Amortization Depletion"),
+        "sga": _yf_row(income, "Selling General And Administration", "Selling General And Administrative Expense"),
+        "cfo": _yf_row(cashflow, "Operating Cash Flow", "Cash Flow From Continuing Operating Activities"),
+        "income_continuing": _yf_row(income, "Net Income From Continuing Operation Net Minority Interest",
+                                     "Net Income Continuous Operations", "Net Income"),
+        "prior": {
+            "revenue": _yf_row_at(income, 1, "Total Revenue"),
+            "gross_profit": _yf_row_at(income, 1, "Gross Profit"),
+            "receivables": _yf_row_at(balance, 1, "Receivables", "Accounts Receivable", "Net Receivables"),
+            "current_assets": _yf_row_at(balance, 1, "Current Assets", "Total Current Assets"),
+            "ppe": _yf_row_at(balance, 1, "Net PPE", "Net Property Plant And Equipment", "Properties"),
+            "securities": _yf_row_at(balance, 1, "Investments And Advances", "Long Term Equity Investment", "Other Investments"),
+            "total_assets": _yf_row_at(balance, 1, "Total Assets"),
+            "depreciation": _yf_row_at(income, 1, "Reconciled Depreciation")
+                or _yf_row_at(cashflow, 1, "Depreciation And Amortization", "Depreciation Amortization Depletion"),
+            "sga": _yf_row_at(income, 1, "Selling General And Administration", "Selling General And Administrative Expense"),
+            "current_liabilities": _yf_row_at(balance, 1, "Current Liabilities", "Total Current Liabilities"),
+            "total_debt": _yf_row_at(balance, 1, "Total Debt"),
+        },
     }
 
 
@@ -175,36 +221,61 @@ def _simfin_load():
 
 def _latest(df, ticker):
     """Most recent annual row for `ticker` from a SimFin (Ticker, Report Date) frame."""
+    return _two_latest(df, ticker)[0]
+
+
+def _two_latest(df, ticker):
+    """(latest_row, prior_row) for `ticker`; prior is None if only one annual report."""
     try:
         rows = df.loc[ticker]                                  # KeyError if not covered
     except KeyError:
-        return None
+        return None, None
     if isinstance(rows, pd.Series):                            # single report date
-        return rows
-    return rows.sort_index().iloc[-1]                          # latest report date
+        return rows, None
+    rows = rows.sort_index()
+    return rows.iloc[-1], (rows.iloc[-2] if len(rows) >= 2 else None)
 
 
 def simfin_fundamentals(ticker):
     """Canonical fundamentals for one ticker from the SimFin bulk datasets
     (column names calibrated against real SimFin US data, 2026-06-14)."""
     d = _simfin_load()
-    inc, bal, cf = _latest(d["income"], ticker), _latest(d["balance"], ticker), _latest(d["cashflow"], ticker)
+    inc, inc_p = _two_latest(d["income"], ticker)
+    bal, bal_p = _two_latest(d["balance"], ticker)
+    cf = _latest(d["cashflow"], ticker)
     if inc is None or bal is None:
         return _blank(ticker)                                  # not covered -> full blank schema
 
     def g(row, col):
         return float(row[col]) if (row is not None and col in row and row[col] == row[col]) else None
 
+    def debt(b):                                               # short + long term debt
+        return None if b is None else (g(b, "Short Term Debt") or 0.0) + (g(b, "Long Term Debt") or 0.0)
+
     ebit = g(inc, "Operating Income (Loss)")
     da = g(inc, "Depreciation & Amortization")
     pretax = g(inc, "Pretax Income (Loss)")
     tax = g(inc, "Income Tax (Expense) Benefit, Net")          # negative = expense
-    total_debt = (g(bal, "Short Term Debt") or 0.0) + (g(bal, "Long Term Debt") or 0.0)
+    total_debt = debt(bal)
     cash = g(bal, "Cash, Cash Equivalents & Short Term Investments")
     ocf = g(cf, "Net Cash from Operating Activities")
     capex = g(cf, "Change in Fixed Assets & Intangibles")      # negative
     market_cap = _simfin_market_cap(d["prices"], ticker)
     report_date = inc.name if hasattr(inc, "name") else None   # the latest Report Date
+
+    prior = {
+        "revenue": g(inc_p, "Revenue"),
+        "gross_profit": g(inc_p, "Gross Profit"),
+        "receivables": g(bal_p, "Accounts & Notes Receivable"),
+        "current_assets": g(bal_p, "Total Current Assets"),
+        "ppe": g(bal_p, "Property, Plant & Equipment, Net"),
+        "securities": g(bal_p, "Long Term Investments & Receivables"),
+        "total_assets": g(bal_p, "Total Assets"),
+        "depreciation": g(inc_p, "Depreciation & Amortization"),
+        "sga": g(inc_p, "Selling, General & Administrative"),
+        "current_liabilities": g(bal_p, "Total Current Liabilities"),
+        "total_debt": debt(bal_p),
+    }
 
     return {
         "ticker": ticker,
@@ -227,6 +298,16 @@ def simfin_fundamentals(ticker):
         "current_assets": g(bal, "Total Current Assets"),
         "current_liabilities": g(bal, "Total Current Liabilities"),
         "retained_earnings": g(bal, "Retained Earnings"),
+        # Beneish M-score current-year inputs:
+        "gross_profit": g(inc, "Gross Profit"),
+        "receivables": g(bal, "Accounts & Notes Receivable"),
+        "ppe": g(bal, "Property, Plant & Equipment, Net"),
+        "securities": g(bal, "Long Term Investments & Receivables"),
+        "depreciation": da,
+        "sga": g(inc, "Selling, General & Administrative"),
+        "cfo": ocf,
+        "income_continuing": g(inc, "Income (Loss) from Continuing Operations"),
+        "prior": prior,
     }
 
 

@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 import fundamentals as F
-from factors import (calculate_factors, altman_z, get_ev_ebit, get_price_fcf,
+from factors import (calculate_factors, altman_z, beneish_m, get_ev_ebit, get_price_fcf,
                      get_roic, get_gm_stability, get_net_debt_ebitda)
 
 
@@ -92,6 +92,43 @@ def test_altman_z_known():
               market_cap=2000.0, revenue=1200.0)
     # 1.2*.3 + 1.4*.3 + 3.3*.15 + 0.6*5 + 1.0*1.2 = 5.475
     assert abs(altman_z(f) - 5.475) < 1e-9
+
+
+# ----------------------------------------------- Beneish M-score
+def test_beneish_m_rederivation():
+    cur = dict(revenue=1000.0, receivables=100.0, gross_profit=400.0, current_assets=500.0,
+               ppe=300.0, securities=0.0, total_assets=1000.0, depreciation=50.0, sga=150.0,
+               current_liabilities=200.0, total_debt=100.0, cfo=120.0, income_continuing=90.0)
+    prior = dict(revenue=900.0, gross_profit=360.0, receivables=80.0, current_assets=450.0,
+                 ppe=280.0, securities=0.0, total_assets=950.0, depreciation=45.0, sga=140.0,
+                 current_liabilities=190.0, total_debt=95.0)
+    f = canon(**cur); f["prior"] = prior
+    dsri = (100 / 1000) / (80 / 900); gmi = (360 / 900) / (400 / 1000)
+    aqi = (1 - 800 / 1000) / (1 - 730 / 950); sgi = 1000 / 900
+    depi = (45 / 325) / (50 / 350); sgai = (150 / 1000) / (140 / 900)
+    lvgi = (300 / 1000) / (285 / 950); tata = (90 - 120) / 1000
+    expected = (-4.84 + 0.92 * dsri + 0.528 * gmi + 0.404 * aqi + 0.892 * sgi
+                + 0.115 * depi - 0.172 * sgai + 4.679 * tata - 0.327 * lvgi)
+    assert abs(beneish_m(f) - expected) < 1e-9
+
+
+def test_beneish_none_without_prior():
+    f = canon(revenue=1000.0, receivables=100.0, gross_profit=400.0, current_assets=500.0,
+              ppe=300.0, total_assets=1000.0, depreciation=50.0, sga=150.0,
+              current_liabilities=200.0, total_debt=100.0, cfo=120.0, income_continuing=90.0)
+    assert beneish_m(f) is None                  # prior all None -> can't compute
+
+
+def test_beneish_none_on_blank():
+    assert beneish_m(F._blank("X")) is None
+
+
+def test_normalize_cleans_prior_nan():
+    f = canon()
+    f["prior"] = {"revenue": float("nan"), "total_debt": 95.0}
+    out = F._normalize(f)
+    assert out["prior"]["revenue"] is None and out["prior"]["total_debt"] == 95.0
+    F.validate_canonical(out)                    # prior dict still conforms
 
 
 # ----------------------------------------------- edge / missing -> None, no crash

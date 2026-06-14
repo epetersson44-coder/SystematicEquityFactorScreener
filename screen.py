@@ -10,12 +10,13 @@
 import pandas as pd
 
 from fundamentals import get_fundamentals, _simfin_load
-from factors import calculate_factors, altman_z
+from factors import calculate_factors, altman_z, beneish_m
 from score import score
 
 EXCLUDE_SECTORS = ("Financial Services", "Real Estate")   # banks + REITs (spec excludes)
 MIN_CAP, MAX_CAP = 300e6, 5e9                             # $300M–$5B small-cap band
 MIN_Z = 1.81                                              # Altman: below = distress, drop
+MAX_M = -1.78                                             # Beneish: above = likely manipulator, drop
 
 
 def simfin_universe():
@@ -26,12 +27,12 @@ def simfin_universe():
 
 
 def run_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX_CAP,
-               exclude_sectors=EXCLUDE_SECTORS, min_z=MIN_Z):
-    """Filter the universe (band → ex-financials → distress) then rank survivors."""
+               exclude_sectors=EXCLUDE_SECTORS, min_z=MIN_Z, max_m=MAX_M):
+    """Filter the universe (band → ex-financials → distress → manipulators) then rank."""
     if tickers is None:
         tickers = simfin_universe() if source == "simfin" else None
     rows = []
-    dropped = {"off_band": 0, "financial": 0, "distress": 0}
+    dropped = {"off_band": 0, "financial": 0, "distress": 0, "manipulator": 0}
     for t in tickers:
         try:
             f = get_fundamentals(t, source=source)
@@ -48,15 +49,21 @@ def run_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX_CAP,
         if z is not None and z < min_z:                  # only drop KNOWN-distressed
             dropped["distress"] += 1
             continue
+        m = beneish_m(f)
+        if m is not None and m > max_m:                  # only drop KNOWN-manipulators
+            dropped["manipulator"] += 1
+            continue
         rec = calculate_factors(f)
         rec["market_cap"] = mc
         rec["altman_z"] = z
+        rec["beneish_m"] = m
         rows.append(rec)
     df = pd.DataFrame(rows)
     ranked = score(df).dropna(subset=["composite"]) if not df.empty else df
     print(f"universe {len(tickers)} -> dropped {dropped['off_band']} off-band, "
-          f"{dropped['financial']} financials/REITs, {dropped['distress']} distressed "
-          f"-> {len(df)} screened, {len(ranked)} with valid composite")
+          f"{dropped['financial']} financials/REITs, {dropped['distress']} distressed, "
+          f"{dropped['manipulator']} manipulators -> {len(df)} screened, "
+          f"{len(ranked)} with valid composite")
     return ranked
 
 
@@ -65,5 +72,7 @@ if __name__ == "__main__":
     show = r.head(20).copy()
     show["mkt_cap_$B"] = (show["market_cap"] / 1e9).round(2)
     show["altman_z"] = show["altman_z"].round(2)
-    print("\n=== TOP 20 — small-cap value screen ($300M–$5B, ex-financials, Altman Z >= 1.81) ===")
-    print(show[["ticker", "composite", "n_factors", "mkt_cap_$B", "altman_z"]].to_string(index=False))
+    show["beneish_m"] = show["beneish_m"].round(2)
+    print("\n=== TOP 20 — small-cap value screen ===")
+    print("($300M–$5B, ex-financials, Altman Z >= 1.81, Beneish M <= -1.78)")
+    print(show[["ticker", "composite", "n_factors", "mkt_cap_$B", "altman_z", "beneish_m"]].to_string(index=False))
