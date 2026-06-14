@@ -19,7 +19,7 @@ import datetime as dt
 import numpy as np
 import pandas as pd
 
-from backtest.universe import get_universe
+from backtest.universe import get_universe, download_panel
 from backtest.data import get_prices
 from backtest.strategy import CrossSectionalMomentum
 
@@ -36,12 +36,35 @@ def momentum_picks(refresh=False):
     return weights, closes.iloc[i], closes.index[i].date().isoformat()
 
 
+def factor_picks(top_n=5):
+    """Today's top-`top_n` names from Erik's 5-factor screener: (weights, prices, asof).
+
+    Reuses the screener's OWN scoring (score.py at the repo root) with its live
+    yfinance fundamentals fetch — a real, current ranking of its universe, equal-
+    weighted. The headline résumé artifact, going live."""
+    try:
+        import score as screener
+        from config import TICKERS
+    except ImportError as e:                                  # needs the repo root on path
+        raise RuntimeError(f"can't import the screener — run from the repo root: {e}")
+    ranked = screener.score(screener.build_factor_table(TICKERS)).dropna(subset=["composite"])
+    picks = ranked.head(top_n)["ticker"].tolist()
+    if not picks:
+        raise RuntimeError("screener returned no names with a valid composite")
+    closes = download_panel(picks)["Close"]
+    return pd.Series(1.0 / len(picks), index=picks), closes.iloc[-1], closes.index[-1].date().isoformat()
+
+
+PICKERS = {"momentum": momentum_picks, "factor": factor_picks}
+
+
 def lock(strategy="momentum", refresh=False):
     """Compute today's picks and write them to an immutable dated file. Refuses to
     overwrite an existing lock — picks, once made, never change."""
-    if strategy != "momentum":
-        raise ValueError(f"unknown strategy {strategy!r} (only 'momentum' for now)")
-    weights, prices, asof = momentum_picks(refresh=refresh)
+    if strategy not in PICKERS:
+        raise ValueError(f"unknown strategy {strategy!r} (use {sorted(PICKERS)})")
+    picker = PICKERS[strategy]
+    weights, prices, asof = picker(refresh=refresh) if strategy == "momentum" else picker()
     spy_close = float(get_prices("SPY", refresh=refresh)["Close"].iloc[-1])
 
     rec = {
@@ -112,9 +135,10 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
         print(f"no locked picks for {strategy!r} yet — run: python -m backtest.tracker lock")
         return None
 
-    closes = get_universe("sp500", refresh=refresh)["Close"]
-    spy_close = get_prices("SPY", refresh=refresh)["Close"]
     recs = [json.load(open(os.path.join(out_dir, f))) for f in files]
+    universe = sorted({t for rec in recs for t in rec["picks"]})   # exactly this book's names
+    closes = download_panel(universe)["Close"]
+    spy_close = get_prices("SPY", refresh=refresh)["Close"]
 
     eq, s = _simulate(recs, closes, spy_close, initial)
     print(f"Managed ${initial:,.0f} paper portfolio ({strategy}), {s['start']} -> {s['end']}:")

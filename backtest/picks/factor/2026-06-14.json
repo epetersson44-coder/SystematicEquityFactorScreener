@@ -1,0 +1,21 @@
+{
+  "lock_date": "2026-06-14",
+  "data_asof": "2026-06-12",
+  "strategy": "factor",
+  "n": 5,
+  "picks": {
+    "CWST": 0.2,
+    "MNRO": 0.2,
+    "PRGS": 0.2,
+    "MGRC": 0.2,
+    "LCII": 0.2
+  },
+  "lock_prices": {
+    "CWST": 89.37,
+    "MNRO": 15.95,
+    "PRGS": 31.47,
+    "MGRC": 115.09,
+    "LCII": 93.06
+  },
+  "spy_lock": 741.75
+}
