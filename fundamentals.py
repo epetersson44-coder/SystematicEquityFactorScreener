@@ -18,6 +18,8 @@
 
 import os
 
+import pandas as pd
+
 
 # ----------------------------------------------------------------- yfinance adapter
 def _yf_row(df, *labels):
@@ -73,6 +75,8 @@ def _simfin_load():
     if _SIMFIN:
         return _SIMFIN
     import simfin as sf
+    from dotenv import load_dotenv
+    load_dotenv()                                             # pick up .env on any entry point
     key = os.environ.get("SIMFIN_API_KEY")
     if not key:
         raise RuntimeError(
@@ -90,15 +94,17 @@ def _simfin_load():
 def _latest(df, ticker):
     """Most recent annual row for `ticker` from a SimFin (Ticker, Report Date) frame."""
     try:
-        rows = df.loc[ticker]
+        rows = df.loc[ticker]                                  # KeyError if not covered (O(log n))
     except KeyError:
         return None
-    return rows.iloc[-1] if hasattr(rows, "iloc") and getattr(rows, "ndim", 1) > 1 else rows
+    if isinstance(rows, pd.Series):                            # single report date
+        return rows
+    return rows.sort_index().iloc[-1]                          # latest report date
 
 
 def simfin_fundamentals(ticker):
-    """Canonical fundamentals for one ticker from the SimFin bulk datasets.
-    Column names are SimFin's standard schema — verify against real data once keyed."""
+    """Canonical fundamentals for one ticker from the SimFin bulk datasets
+    (column names calibrated against real SimFin US data, 2026-06-14)."""
     d = _simfin_load()
     inc, bal, cf = _latest(d["income"], ticker), _latest(d["balance"], ticker), _latest(d["cashflow"], ticker)
     if inc is None or bal is None:
@@ -108,16 +114,14 @@ def simfin_fundamentals(ticker):
         return float(row[col]) if (row is not None and col in row and row[col] == row[col]) else None
 
     ebit = g(inc, "Operating Income (Loss)")
-    da = g(cf, "Depreciation & Amortization")
+    da = g(inc, "Depreciation & Amortization")                 # D&A is on SimFin's income stmt
     pretax = g(inc, "Pretax Income (Loss)")
     tax = g(inc, "Income Tax (Expense) Benefit, Net")          # negative = expense
-    st_debt = g(bal, "Short Term Debt") or 0.0
-    lt_debt = g(bal, "Long Term Debt") or 0.0
-    total_debt = st_debt + lt_debt
+    total_debt = (g(bal, "Short Term Debt") or 0.0) + (g(bal, "Long Term Debt") or 0.0)
     cash = g(bal, "Cash, Cash Equivalents & Short Term Investments")
     ocf = g(cf, "Net Cash from Operating Activities")
     capex = g(cf, "Change in Fixed Assets & Intangibles")      # negative
-    market_cap = _simfin_market_cap(d["prices"], ticker, g(bal, "Shares Outstanding"))
+    market_cap = _simfin_market_cap(d["prices"], ticker)
 
     return {
         "ticker": ticker,
@@ -135,12 +139,17 @@ def simfin_fundamentals(ticker):
     }
 
 
-def _simfin_market_cap(prices, ticker, shares):
+def _simfin_market_cap(prices, ticker):
+    """Latest close x shares outstanding (both from SimFin's shareprices dataset)."""
     try:
-        close = float(prices.loc[ticker]["Close"].iloc[-1])
-        return close * shares if shares else None
-    except Exception:
+        rows = prices.loc[ticker]
+    except KeyError:
         return None
+    last = rows if isinstance(rows, pd.Series) else rows.sort_index().iloc[-1]
+    close, shares = last.get("Close"), last.get("Shares Outstanding")
+    if close == close and shares == shares and shares:        # not NaN
+        return float(close) * float(shares)
+    return None
 
 
 def _simfin_history(df, ticker, col):
