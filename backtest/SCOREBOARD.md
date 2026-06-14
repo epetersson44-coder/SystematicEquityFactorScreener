@@ -32,8 +32,26 @@ just depth, is what ends a strategy's life. A −34% / 1.8-yr hole is survivable
 below Chan's ~1.0 rule of thumb for "worth trading." What we've built is honest and
 correct; it is not yet alpha. That's the point of Phase 2.
 
-**Caveats (still open):** in-sample, a single untuned 50/200 choice (robustness =
-Phase 2 walk-forward), single asset, no survivorship-bias-free universe. Don't read
-the SMA's edge as proven — it's one parameter pair on one index over one history.
+**Caveats (still open):** single asset, no survivorship-bias-free universe. The
+robustness question is now answered below (Phase 2).
 
-_Regenerate: `python -m backtest.tests.test_backtest` (31 checks) then the engine run._
+---
+
+## Phase 2 — walk-forward (honest, out-of-sample 2004→2026)
+
+`python -m backtest.walkforward`. Roll a 4-yr train → 1-yr test window, re-optimize
+each step, trade only on the unseen year. Full writeup: wiki `CODE/walk-forward`.
+
+| Strategy | CAGR | Sharpe | Max DD | Calmar | Verdict |
+|---|---|---|---|---|---|
+| Walk-forward (honest) | 9.0% | **0.44** | -21.0% | 0.43 | the trustworthy number |
+| Optimize-all (fantasy, cheats) | 9.8% | 0.51 | -18.9% | 0.52 | overstated by peeking at all history |
+| Untuned 50/200 | 9.4% | **0.44** | -33.7% | 0.28 | tied walk-forward on Sharpe |
+| SPY buy & hold | 10.7% | 0.43 | -55.2% | 0.19 | won on return this window (no dot-com crash) |
+
+**Lesson:** Sharpe deflates with honesty — in-sample best 0.52 → optimize-all 0.51 →
+walk-forward **0.44** → do-nothing **0.44**. The overfitting tax is +0.07; optimizing
+added +0.00 Sharpe over a naive default (it did cut drawdown). You don't beat SPY by
+tuning one indicator on SPY — real edge is Phase 3 (universe + factors).
+
+_Regenerate: `python -m backtest.tests.test_backtest` (31) + `stress_test` + `walkforward`._

@@ -44,3 +44,35 @@ class ConstantWeight(Strategy):
 
     def target_weight(self, history):
         return self.w
+
+
+# ---------------------------------------------------------- multi-asset (Phase 3)
+def make_panel(closes, tickers=None, opens=None, start="2010-01-04"):
+    """Build {'Close','Open'} (date x ticker) panels from a 2D array of closes.
+
+    closes: array shape (days, n_tickers). opens defaults to closes. Used by the
+    cross-sectional engine tests."""
+    closes = np.asarray(closes, dtype=float)
+    if closes.ndim == 1:
+        closes = closes.reshape(-1, 1)
+    n, k = closes.shape
+    tickers = tickers if tickers is not None else [f"T{j}" for j in range(k)]
+    idx = pd.bdate_range(start, periods=n, name="Date")
+    opens = closes if opens is None else np.asarray(opens, dtype=float)
+    return {
+        "Close": pd.DataFrame(closes, index=idx, columns=tickers),
+        "Open": pd.DataFrame(opens, index=idx, columns=tickers),
+    }
+
+
+def rising_panel(n, k, daily=0.0005, p0=100.0):
+    """k tickers all rising at the same geometric rate (a known-answer fixture)."""
+    col = p0 * (1 + daily) ** np.arange(n)
+    return make_panel(np.repeat(col.reshape(-1, 1), k, axis=1))
+
+
+def random_panel(n, k, vol=0.012, p0=100.0, seed=0):
+    """k independent geometric random walks, strictly positive."""
+    rng = np.random.default_rng(seed)
+    steps = rng.normal(0, vol, (n, k))
+    return make_panel(p0 * np.exp(np.cumsum(steps, axis=0)))
