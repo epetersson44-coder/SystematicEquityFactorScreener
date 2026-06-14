@@ -55,9 +55,11 @@ def lock(strategy="momentum", refresh=False):
     }
     out_dir = os.path.join(PICKS_DIR, strategy)
     os.makedirs(out_dir, exist_ok=True)
+    month = rec["lock_date"][:7]                          # one lock per calendar month
+    existing = [f for f in os.listdir(out_dir) if f.startswith(month) and f.endswith(".json")]
+    if existing:
+        raise FileExistsError(f"already locked for {month}: {existing[0]} — one lock per month, picks are immutable")
     path = os.path.join(out_dir, f"{rec['lock_date']}.json")
-    if os.path.exists(path):
-        raise FileExistsError(f"already locked today: {path} — picks are immutable")
     with open(path, "w") as f:
         json.dump(rec, f, indent=2)
     print(f"locked {rec['n']} {strategy} picks (data as of {asof}) -> {os.path.relpath(path)}")
@@ -137,9 +139,10 @@ if __name__ == "__main__":
     import sys
     cmd = sys.argv[1] if len(sys.argv) > 1 else "lock"
     strat = sys.argv[2] if len(sys.argv) > 2 else "momentum"
+    # CLI = real monthly use -> pull fresh prices (the interactive funcs default to cache)
     if cmd == "lock":
-        lock(strat)
+        lock(strat, refresh=True)
     elif cmd == "report":
-        report(strat)
+        report(strat, refresh=True)
     else:
         print("usage: python -m backtest.tracker [lock|report] [strategy]")
