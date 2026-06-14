@@ -16,6 +16,7 @@ import os
 import json
 import datetime as dt
 
+import numpy as np
 import pandas as pd
 
 from backtest.universe import get_universe
@@ -65,40 +66,71 @@ def lock(strategy="momentum", refresh=False):
     return rec
 
 
-def report(strategy="momentum", refresh=False):
-    """Score every locked pick-set's return-since-lock vs SPY over the same span."""
+def _simulate(recs, closes, spy_close, initial=10_000.0):
+    """ONE managed paper portfolio: start with `initial`, hold each month's locked
+    basket until the next lock, then rebalance into the new picks; carry the value
+    forward. Returns (equity Series, summary). Prices come from the universe panel,
+    so any pick's value at any date is looked up consistently.
+
+    recs: list of {data_asof, picks} (one per monthly lock). closes: (date x ticker)
+    panel. spy_close: Series of SPY close by date."""
+    recs = sorted(recs, key=lambda r: r["data_asof"])
+    dates = [pd.to_datetime(r["data_asof"]) for r in recs]
+    end = closes.index[-1]
+    bounds = dates + [end]                                # each basket runs lock_k -> lock_{k+1}
+    value = initial
+    curve = {dates[0]: initial}
+    for k, rec in enumerate(recs):
+        d0, d1 = bounds[k], bounds[k + 1]
+        if d1 <= d0:
+            continue
+        seg_ret = 0.0
+        for t, w in rec["picks"].items():
+            if t not in closes.columns:
+                continue
+            p0, p1 = closes.at[d0, t], closes.at[d1, t]
+            if p0 == p0 and p1 == p1 and p0 > 0:          # both prices present
+                seg_ret += w * (p1 / p0 - 1)
+        value *= (1 + seg_ret)
+        curve[d1] = value
+    eq = pd.Series(curve).sort_index()
+    s0 = float(spy_close.loc[spy_close.index >= dates[0]].iloc[0])
+    s1 = float(spy_close.iloc[-1])
+    return eq, {"final": value, "ret": value / initial - 1,
+                "spy_ret": s1 / s0 - 1, "spy_final": initial * (s1 / s0),
+                "start": dates[0].date(), "end": end.date()}
+
+
+def report(strategy="momentum", initial=10_000.0, refresh=False):
+    """Score the live record as ONE managed $10k paper portfolio vs SPY, plus a
+    per-month breakdown of each basket since its own lock."""
     out_dir = os.path.join(PICKS_DIR, strategy)
     files = sorted(f for f in os.listdir(out_dir) if f.endswith(".json")) if os.path.isdir(out_dir) else []
     if not files:
         print(f"no locked picks for {strategy!r} yet — run: python -m backtest.tracker lock")
         return None
 
-    now = get_universe("sp500", refresh=refresh)["Close"].iloc[-1]
-    spy_now = float(get_prices("SPY", refresh=refresh)["Close"].iloc[-1])
+    closes = get_universe("sp500", refresh=refresh)["Close"]
+    spy_close = get_prices("SPY", refresh=refresh)["Close"]
+    recs = [json.load(open(os.path.join(out_dir, f))) for f in files]
 
+    eq, s = _simulate(recs, closes, spy_close, initial)
+    print(f"Managed ${initial:,.0f} paper portfolio ({strategy}), {s['start']} -> {s['end']}:")
+    print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
+    print(f"  SPY      : ${s['spy_final']:>11,.0f}   ({s['spy_ret'] * 100:+.1f}%)")
+    print(f"  excess   : {(s['ret'] - s['spy_ret']) * 100:+.1f}%")
+    print(f"  ({len(recs)} monthly lock(s) chained; rebalances into new picks each month)")
+
+    now = closes.iloc[-1]
     rows = []
-    for fname in files:
-        rec = json.load(open(os.path.join(out_dir, fname)))
-        ret, missing = 0.0, []
-        for t, w in rec["picks"].items():
-            p1 = float(now.get(t, float("nan")))
-            if p1 == p1:                                  # not NaN
-                ret += w * (p1 / rec["lock_prices"][t] - 1)
-            else:
-                missing.append(t)                         # delisted since lock (rare)
-        spy_ret = spy_now / rec["spy_lock"] - 1
-        rows.append({
-            "lock_date": rec["lock_date"], "n": rec["n"],
-            "strat_%": round(ret * 100, 2), "spy_%": round(spy_ret * 100, 2),
-            "excess_%": round((ret - spy_ret) * 100, 2),
-            "missing": len(missing),
-        })
-    df = pd.DataFrame(rows)
-    print(df.to_string(index=False))
-    df.to_csv(os.path.join(out_dir, "_track_record.csv"), index=False)
-    print(f"\n(saved -> {os.path.relpath(os.path.join(out_dir, '_track_record.csv'))}; "
-          f"first lock {files[0][:-5]}, picks are immutable + committed)")
-    return df
+    for rec in recs:
+        ret = sum(w * (float(now.get(t, np.nan)) / rec["lock_prices"][t] - 1)
+                  for t, w in rec["picks"].items() if float(now.get(t, np.nan)) == float(now.get(t, np.nan)))
+        rows.append({"lock_date": rec["lock_date"], "n": rec["n"], "basket_%_since_lock": round(ret * 100, 2)})
+    print("\nPer-month basket (each since its own lock):")
+    print(pd.DataFrame(rows).to_string(index=False))
+    eq.to_csv(os.path.join(out_dir, "_equity.csv"))
+    return eq
 
 
 if __name__ == "__main__":

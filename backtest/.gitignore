@@ -1,3 +1,6 @@
 # Cached price data — re-fetchable, not source. Don't commit.
 cache/
 __pycache__/
+
+# derived report outputs (regenerable from the immutable picks json)
+picks/**/_*.csv
