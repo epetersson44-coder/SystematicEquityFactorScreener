@@ -236,16 +236,11 @@ def _two_latest(df, ticker):
     return rows.iloc[-1], (rows.iloc[-2] if len(rows) >= 2 else None)
 
 
-def simfin_fundamentals(ticker):
-    """Canonical fundamentals for one ticker from the SimFin bulk datasets
-    (column names calibrated against real SimFin US data, 2026-06-14)."""
-    d = _simfin_load()
-    inc, inc_p = _two_latest(d["income"], ticker)
-    bal, bal_p = _two_latest(d["balance"], ticker)
-    cf = _latest(d["cashflow"], ticker)
-    if inc is None or bal is None:
-        return _blank(ticker)                                  # not covered -> full blank schema
-
+def _simfin_canonical(ticker, inc, inc_p, bal, bal_p, cf, market_cap, sector, rev_hist, gp_hist):
+    """Assemble the canonical dict from SimFin rows. Shared by the live path (latest
+    reported) and the as-of path (point-in-time): the caller resolves which rows, the
+    market cap, the sector, and the history lists; the column→field mapping lives here
+    once so the two paths can't drift. Column names calibrated vs real SimFin US data."""
     def g(row, col):
         return float(row[col]) if (row is not None and col in row and row[col] == row[col]) else None
 
@@ -260,8 +255,7 @@ def simfin_fundamentals(ticker):
     cash = g(bal, "Cash, Cash Equivalents & Short Term Investments")
     ocf = g(cf, "Net Cash from Operating Activities")
     capex = g(cf, "Change in Fixed Assets & Intangibles")      # negative
-    market_cap = _simfin_market_cap(d["prices"], ticker)
-    report_date = inc.name if hasattr(inc, "name") else None   # the latest Report Date
+    report_date = inc.name if hasattr(inc, "name") else None
 
     prior = {
         "revenue": g(inc_p, "Revenue"),
@@ -279,7 +273,7 @@ def simfin_fundamentals(ticker):
 
     return {
         "ticker": ticker,
-        "sector": d["sector"].get(ticker),
+        "sector": sector,
         "report_date": str(report_date.date()) if hasattr(report_date, "date") else str(report_date),
         "market_cap": market_cap,
         "enterprise_value": (market_cap + total_debt - cash) if (market_cap and cash is not None) else None,
@@ -291,8 +285,8 @@ def simfin_fundamentals(ticker):
         "tax_rate": (-tax / pretax) if (tax is not None and pretax) else None,
         "free_cash_flow": (ocf + capex) if (ocf is not None and capex is not None) else None,
         "revenue": g(inc, "Revenue"),
-        "revenue_history": _simfin_history(d["income"], ticker, "Revenue"),
-        "gross_profit_history": _simfin_history(d["income"], ticker, "Gross Profit"),
+        "revenue_history": rev_hist,
+        "gross_profit_history": gp_hist,
         "total_assets": g(bal, "Total Assets"),
         "total_liabilities": g(bal, "Total Liabilities"),
         "current_assets": g(bal, "Total Current Assets"),
@@ -309,6 +303,72 @@ def simfin_fundamentals(ticker):
         "income_continuing": g(inc, "Income (Loss) from Continuing Operations"),
         "prior": prior,
     }
+
+
+def simfin_fundamentals(ticker):
+    """Canonical fundamentals for one ticker from the SimFin bulk datasets — LATEST
+    reported (the live screen path)."""
+    d = _simfin_load()
+    inc, inc_p = _two_latest(d["income"], ticker)
+    bal, bal_p = _two_latest(d["balance"], ticker)
+    cf = _latest(d["cashflow"], ticker)
+    if inc is None or bal is None:
+        return _blank(ticker)                                  # not covered -> full blank schema
+    return _simfin_canonical(
+        ticker, inc, inc_p, bal, bal_p, cf,
+        market_cap=_simfin_market_cap(d["prices"], ticker),
+        sector=d["sector"].get(ticker),
+        rev_hist=_simfin_history(d["income"], ticker, "Revenue"),
+        gp_hist=_simfin_history(d["income"], ticker, "Gross Profit"))
+
+
+def _rows_asof(df, ticker, asof):
+    """All annual rows for `ticker` PUBLISHED on/before `asof`, sorted by Report Date.
+    The point-in-time gate: a statement is only knowable once its Publish Date has
+    passed, so this is what makes the backtest free of fundamentals look-ahead."""
+    try:
+        rows = df.loc[ticker]
+    except KeyError:
+        return None
+    if isinstance(rows, pd.Series):                            # single report -> one-row frame
+        rows = rows.to_frame().T
+    rows = rows[pd.to_datetime(rows["Publish Date"]) <= pd.to_datetime(asof)]
+    return rows.sort_index() if len(rows) else None
+
+
+def _two_from(rows):
+    """(latest_row, prior_row) from an as-of row frame; prior None if only one."""
+    if rows is None or len(rows) == 0:
+        return None, None
+    return rows.iloc[-1], (rows.iloc[-2] if len(rows) >= 2 else None)
+
+
+def simfin_fundamentals_asof(ticker, asof, price=None):
+    """POINT-IN-TIME canonical fundamentals: uses only annual statements published on or
+    before `asof` (no look-ahead). market_cap = `price` × shares-as-reported when a price
+    is supplied (the backtest passes the as-of close), else None. NOTE: SimFin updates a
+    fiscal-year row in place on restatement, so figures may be mildly restated vs
+    as-originally-filed — a documented free-data caveat, small for the value factors."""
+    d = _simfin_load()
+    inc_rows = _rows_asof(d["income"], ticker, asof)
+    bal_rows = _rows_asof(d["balance"], ticker, asof)
+    cf_rows = _rows_asof(d["cashflow"], ticker, asof)
+    inc, inc_p = _two_from(inc_rows)
+    bal, bal_p = _two_from(bal_rows)
+    cf = cf_rows.iloc[-1] if (cf_rows is not None and len(cf_rows)) else None
+    if inc is None or bal is None:
+        return _blank(ticker)                                  # not yet covered as of this date
+
+    shares = None
+    for col in ("Shares (Diluted)", "Shares (Basic)"):
+        if col in inc and inc[col] == inc[col] and inc[col]:
+            shares = float(inc[col]); break
+    market_cap = (price * shares) if (price is not None and shares) else None
+
+    rev_hist = list(inc_rows["Revenue"].dropna().iloc[::-1]) if "Revenue" in inc_rows else []
+    gp_hist = list(inc_rows["Gross Profit"].dropna().iloc[::-1]) if "Gross Profit" in inc_rows else []
+    return _simfin_canonical(ticker, inc, inc_p, bal, bal_p, cf, market_cap,
+                             d["sector"].get(ticker), rev_hist, gp_hist)
 
 
 def _simfin_market_cap(prices, ticker):
@@ -343,6 +403,14 @@ def get_fundamentals(ticker, source="yfinance"):
     if source not in _SOURCES:
         raise ValueError(f"unknown source {source!r} (use {sorted(_SOURCES)})")
     return _normalize(_SOURCES[source](ticker))
+
+
+def get_fundamentals_asof(ticker, asof, price=None):
+    """Point-in-time canonical fundamentals as of `asof` (SimFin only) — contract-
+    enforced, look-ahead-free (statements published after `asof` are invisible). Pass
+    `price` (the as-of close) to get a point-in-time market_cap. The historical-backtest
+    counterpart to get_fundamentals()."""
+    return _normalize(simfin_fundamentals_asof(ticker, asof, price))
 
 
 def enterprise_value(f):

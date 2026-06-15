@@ -229,6 +229,26 @@ def test_simfin_not_covered_returns_blank():
     assert all(f[k] is None for k in F.SCALAR_KEYS)
 
 
+def test_simfin_asof_is_point_in_time():
+    # the look-ahead gate: a later as-of date sees a NEWER vintage than an earlier one,
+    # never the reverse — a statement is invisible until its Publish Date has passed.
+    if not _simfin_ok():
+        print("    (skipped — no SimFin key/cache)"); return
+    early = F.get_fundamentals_asof("AAPL", "2022-06-01", price=150.0)
+    late = F.get_fundamentals_asof("AAPL", "2024-06-01", price=150.0)
+    F.validate_canonical(early); F.validate_canonical(late)
+    assert early["report_date"] < late["report_date"]        # vintage advanced with time
+    assert early["market_cap"] and early["market_cap"] > 0   # price-derived market cap present
+
+
+def test_simfin_asof_blank_before_any_coverage():
+    if not _simfin_ok():
+        print("    (skipped — no SimFin key/cache)"); return
+    f = F.get_fundamentals_asof("AAPL", "2000-01-01", price=100.0)   # nothing published by 2000
+    F.validate_canonical(f)
+    assert all(f[k] is None for k in F.SCALAR_KEYS)
+
+
 if __name__ == "__main__":
     import sys
     tests = sorted((n, fn) for n, fn in globals().items()
