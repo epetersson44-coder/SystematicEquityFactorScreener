@@ -47,6 +47,25 @@ class RandomRebalance(CrossSectionalStrategy):
         return pd.Series(w, index=pick)
 
 
+class RandomLongShort(CrossSectionalStrategy):
+    """Every `every` bars, random SIGNED weights over available names with gross
+    exposure (sum|w|) in [0.5, 1.5] — a long-short book that stays under gross_max=2."""
+    def __init__(self, seed, every=7, k=6):
+        self.rng = np.random.default_rng(seed)
+        self.every, self.k = every, k
+    def target_weights(self, closes, i):
+        if i == 0 or i % self.every != 0:
+            return None
+        avail = closes.iloc[i].dropna().index
+        if len(avail) == 0:
+            return None
+        k = min(self.k, len(avail))
+        pick = self.rng.choice(np.asarray(avail), size=k, replace=False)
+        w = self.rng.normal(0, 1, k)
+        w = w / np.abs(w).sum() * self.rng.uniform(0.5, 1.5)   # signed, gross in [0.5,1.5]
+        return pd.Series(w, index=pick)
+
+
 # ---------------------------------------------------------------- known answer
 def test_equal_weight_identical_stocks_compounds_analytically():
     # k stocks all rising at the same rate -> equal weights never drift -> the basket
@@ -142,13 +161,15 @@ def test_weight_guard_sum_over_one():
 
 
 def test_weight_guard_negative():
+    # Default (long-only) book: a negative weight is a bug and must raise. Shorting is
+    # opt-in via allow_short (see the shorting section), so this rail stays up by default.
     pf = MultiPortfolio(10_000)
     prices = pd.Series({"A": 10.0, "B": 20.0})
     try:
         pf.rebalance(pd.Series({"A": 0.5, "B": -0.1}), prices)
     except ValueError:
         return
-    raise AssertionError("negative weight should raise (no shorting yet)")
+    raise AssertionError("negative weight should raise in a long-only book")
 
 
 # ---------------------------------------------------------------- NaN / hold
@@ -177,6 +198,128 @@ def test_determinism():
     a = run_xs(panels, RandomRebalance(seed=1), cost=costs.proportional(5)).to_numpy()
     b = run_xs(panels, RandomRebalance(seed=1), cost=costs.proportional(5)).to_numpy()
     assert np.array_equal(a, b)
+
+
+# ---------------------------------------------------------------- shorting
+def test_short_profits_when_price_falls():
+    # Fully short one name whose price declines 0.1%/bar. Known answer: shorting 100
+    # shares @100 leaves cash 20,000 and shares -100, so equity = 20,000 - 100*price.
+    n = 200
+    px = 100 * (1 - 0.001) ** np.arange(n)
+    panels = make_panel(px.reshape(-1, 1), tickers=["A"])
+    eq = run_xs(panels, FixedWeights({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0)
+    expected = 20_000 - 100 * px
+    assert np.allclose(eq.to_numpy(), expected, rtol=0, atol=1e-6)
+    assert eq.iloc[-1] > 10_000                              # price fell -> the short made money
+
+
+def test_opening_a_short_is_equity_neutral():
+    # At the fill price, opening a long-short book with no cost must not change equity.
+    panels = random_panel(60, 6, seed=4)
+    pf = MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+    prices = panels["Close"].iloc[30]
+    cols = list(panels["Close"].columns)
+    w = pd.Series([0.5, 0.5, -0.5, -0.5], index=cols[:4])
+    before = pf.equity(prices)
+    pf.rebalance(w, prices, cost=None)
+    assert abs(pf.equity(prices) - before) < 1e-7
+
+
+def test_dollar_neutral_identical_names_cancel():
+    # 4 identical-return names, 2 long + 2 short equal-weight: the market move cancels
+    # exactly, so a dollar-neutral book is flat regardless of the (shared) trend.
+    n, r = 150, 0.002
+    panels = rising_panel(n, 4, daily=r)
+    w = {"T0": 0.5, "T1": 0.5, "T2": -0.5, "T3": -0.5}
+    eq = run_xs(panels, FixedWeights(w), fill="close", allow_short=True, gross_max=2.0)
+    assert np.allclose(eq.to_numpy(), 10_000.0, rtol=0, atol=1e-6)
+
+
+def test_gross_cap_guard():
+    pf = MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+    prices = pd.Series({"A": 10.0, "B": 20.0, "C": 5.0})
+    try:
+        pf.rebalance(pd.Series({"A": 1.0, "B": -1.0, "C": -0.6}), prices)   # gross 2.6 > 2
+    except ValueError:
+        return
+    raise AssertionError("gross exposure over gross_max should raise")
+
+
+def test_borrow_cost_drags_a_short():
+    # Hold a short on a flat-price name. With no market move, borrow is the only P&L:
+    # equity must fall monotonically and end below where a zero-borrow run leaves it.
+    n = 100
+    panels = make_panel(np.full((n, 1), 100.0), tickers=["A"])
+    free = run_xs(panels, FixedWeights({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0)
+    paid = run_xs(panels, FixedWeights({"A": -1.0}), fill="close", allow_short=True,
+                  gross_max=1.0, borrow_bps=500)
+    assert np.allclose(free.to_numpy(), 10_000.0, atol=1e-6)   # flat price, no borrow -> flat
+    assert paid.iloc[-1] < free.iloc[-1] - 1.0                 # borrow bled it down
+    assert (np.diff(paid.to_numpy()) <= 1e-9).all()            # monotonically decreasing
+
+
+def test_money_conservation_long_short():
+    # Signed version of the conservation identity: cash + sum(shares*close) == equity at
+    # every bar, and each rebalance drop == fee, with shorts in the book.
+    panels = random_panel(400, 8, seed=7)
+    closes, opens = panels["Close"], panels["Open"]
+    cost = costs.proportional(20)
+    pf = MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+    strat = RandomLongShort(seed=7, every=5, k=4)
+    pending, acct_err, fee_err = None, 0.0, 0.0
+    for i in range(len(closes)):
+        if pending is not None:
+            pre = pf.equity(opens.iloc[i])
+            fee = pf.rebalance(pending, opens.iloc[i], cost)
+            post = pf.equity(opens.iloc[i])
+            fee_err = max(fee_err, abs((pre - post) - fee))
+            pending = None
+        w = strat.target_weights(closes, i)
+        if w is not None:
+            pending = w
+        direct = pf.cash + sum(sh * closes.iloc[i][t] for t, sh in pf.shares.items())
+        acct_err = max(acct_err, abs(direct - pf.equity(closes.iloc[i])))
+    assert acct_err < 1e-9, f"signed accounting identity broken: {acct_err}"
+    assert fee_err < 1e-7, f"equity drop != fees: {fee_err}"
+
+
+def test_lookahead_corrupt_the_future_long_short():
+    # The load-bearing test, in short mode: corrupting future bars can't move past equity.
+    panels = random_panel(250, 10, seed=8)
+    base = run_xs(panels, RandomLongShort(seed=8, every=7, k=5), cost=costs.proportional(10),
+                  allow_short=True, borrow_bps=100).to_numpy()
+    for T in (40, 120, 200):
+        corrupt = {k: df.copy() for k, df in panels.items()}
+        for df in corrupt.values():
+            df.iloc[T + 1:] = df.iloc[T + 1:] * 9.0
+        after = run_xs(corrupt, RandomLongShort(seed=8, every=7, k=5), cost=costs.proportional(10),
+                       allow_short=True, borrow_bps=100).to_numpy()
+        assert np.array_equal(base[:T + 1], after[:T + 1]), f"look-ahead leak at T={T}"
+
+
+def test_held_name_delisting_does_not_poison_equity():
+    # B trades for 30 bars then goes NaN (delisted) while still held. Equity must stay
+    # finite (B frozen at its last price), not NaN — the flagged latent bug, now fixed.
+    n = 50
+    a = 100 * (1.001) ** np.arange(n)
+    b = np.concatenate([np.full(30, 100.0), np.full(n - 30, np.nan)])
+    panels = make_panel(np.column_stack([a, b]), tickers=["A", "B"])
+    eq = run_xs(panels, FixedWeights({"A": 0.5, "B": 0.5}), fill="close")
+    assert np.all(np.isfinite(eq.to_numpy())), "delisted held name poisoned equity with NaN"
+    assert (eq.to_numpy() > 0).all()
+
+
+def test_monte_carlo_long_short_finite():
+    # Long-short equity CAN go negative (a short can blow up), so the invariant relaxes
+    # from >0 to just FINITE — across many random universes, with cost + borrow.
+    bad = []
+    for seed in range(150):
+        panels = random_panel(150, np.random.default_rng(seed).integers(4, 12), seed=seed)
+        eq = run_xs(panels, RandomLongShort(seed=seed, every=6), cost=costs.proportional(15),
+                    allow_short=True, borrow_bps=100)
+        if not np.all(np.isfinite(eq.to_numpy())):
+            bad.append(seed)
+    assert not bad, f"non-finite equity on {len(bad)} long-short universes, e.g. {bad[:5]}"
 
 
 # ---------------------------------------------------------------- Monte Carlo

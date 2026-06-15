@@ -7,52 +7,94 @@
 # the simple, hardened reference; this is its own module because the data shape (a
 # date x ticker panel) and the weight interface genuinely differ.
 #
-# Long-only, no leverage: weights are >= 0 and sum to <= 1 (the rest is cash). That
-# guard relaxes deliberately when shorting arrives (pairs trading, later in Phase 3).
+# LONG-ONLY by default (weights >= 0, sum <= 1 — the rest is cash); a stray negative
+# weight from a book that's supposed to be long-only still raises, which catches bugs.
+# Pass allow_short=True to opt into LONG-SHORT: negative weights become short
+# positions, and the [0,1] guard is replaced by a GROSS-exposure cap (sum|w| <=
+# gross_max, default 2.0 = 100% long / 100% short, i.e. dollar-neutral). The signed
+# accounting is the SAME formula — a short just has negative shares: it adds cash when
+# opened and gains when the price falls. Shorts also accrue a borrow cost each bar
+# (borrow_bps), because borrowing shares isn't free — especially for the small-caps
+# this lab screens, where names can be hard or impossible to borrow.
 
 import numpy as np
 import pandas as pd
 
-from backtest.constants import INITIAL_CAPITAL
+from backtest.constants import INITIAL_CAPITAL, TRADING_DAYS
 
 
 class MultiPortfolio:
-    """Cash + a basket of single-name positions ({ticker: shares}, only non-zero kept)."""
+    """Cash + a basket of single-name positions ({ticker: shares}, only non-zero kept).
+    Shares may be negative (a short) when allow_short=True."""
 
-    def __init__(self, cash):
+    def __init__(self, cash, allow_short=False, gross_max=None):
         self.cash = float(cash)
         self.shares = {}
+        self.allow_short = allow_short
+        # gross cap only bites in short mode; default 2.0 there (dollar-neutral), 1.0 long-only
+        self.gross_max = gross_max if gross_max is not None else (2.0 if allow_short else 1.0)
+        self._last_px = {}                                 # last finite price seen per name
 
     def equity(self, prices):
-        """Mark to market: cash + sum(shares * price) over held names. `prices` is a
-        Series (ticker -> price) for the current bar; held names always have a price."""
+        """Mark to market: cash + sum(shares * price) over held names (signed). `prices`
+        is a Series (ticker -> price) for the current bar. If a held name has no price
+        this bar (delisted/halted mid-hold), it's marked at its last finite price rather
+        than silently poisoning equity with NaN — a held name was bought at a real price,
+        so a carried mark always exists."""
         v = self.cash
         for t, sh in self.shares.items():
-            v += sh * prices[t]
+            px = prices.get(t, np.nan)
+            if np.isfinite(px):
+                self._last_px[t] = px
+            else:
+                px = self._last_px.get(t, np.nan)          # carry forward
+            v += sh * px
         return v
+
+    def accrue_borrow(self, prices, daily_rate):
+        """Charge the daily borrow fee on SHORT notional and deduct it from cash. Longs
+        are free; only sh < 0 pays. Returns the dollar charge."""
+        if daily_rate <= 0:
+            return 0.0
+        charge = 0.0
+        for t, sh in self.shares.items():
+            if sh < 0:
+                px = prices.get(t, np.nan)
+                if not np.isfinite(px):
+                    px = self._last_px.get(t, np.nan)
+                if np.isfinite(px):
+                    charge += abs(sh * px) * daily_rate
+        self.cash -= charge
+        return charge
 
     def rebalance(self, target_weights, prices, cost=None):
         """Trade so each name becomes its target fraction of current equity.
 
-        target_weights: Series {ticker: weight}, weights >= 0 summing to <= 1.
-        prices: Series of fill prices for this bar. Names with a NaN/<=0 fill price
-        are skipped (can't trade them) rather than crashing. Returns total fee.
+        target_weights: Series {ticker: weight}. Long-only (default): weights >= 0
+        summing to <= 1. Short mode (allow_short): any sign, with sum|weight| <=
+        gross_max. prices: Series of fill prices for this bar; names with a NaN/<=0 fill
+        price are skipped (can't trade them) rather than crashing. Returns total fee.
         """
-        if (target_weights < 0).any():
-            raise ValueError("negative target weight (long-only — no shorting yet)")
-        total = float(target_weights.sum())
-        if total > 1.0 + 1e-9:
-            raise ValueError(f"target weights sum to {total:.4f} > 1 (no leverage)")
+        if not self.allow_short:
+            if (target_weights < 0).any():
+                raise ValueError("negative target weight (long-only book — pass allow_short=True to short)")
+            total = float(target_weights.sum())
+            if total > 1.0 + 1e-9:
+                raise ValueError(f"target weights sum to {total:.4f} > 1 (no leverage)")
+        else:
+            gross = float(target_weights.abs().sum())
+            if gross > self.gross_max + 1e-9:
+                raise ValueError(f"gross exposure {gross:.4f} > gross_max {self.gross_max} (over-leveraged)")
 
         eq = self.equity(prices)
         target_shares = {}
         for t, w in target_weights.items():
-            if w <= 0:
-                continue
+            if w == 0:
+                continue                                   # exact-zero weight -> close (handled below)
             p = prices.get(t, np.nan)
             if not np.isfinite(p) or p <= 0:
-                continue                                   # untradeable this bar -> stays cash
-            target_shares[t] = w * eq / p
+                continue                                   # untradeable this bar -> position unchanged
+            target_shares[t] = w * eq / p                  # w < 0 -> negative shares (short)
 
         fee = 0.0
         for t in set(self.shares) | set(target_shares):
@@ -61,7 +103,7 @@ class MultiPortfolio:
                 continue
             p = prices[t]
             f = cost(delta, p) if cost else 0.0
-            self.cash -= delta * p + f
+            self.cash -= delta * p + f                     # signed: buying spends, shorting adds cash
             fee += f
             if t in target_shares:
                 self.shares[t] = target_shares[t]
@@ -70,18 +112,22 @@ class MultiPortfolio:
         return fee
 
 
-def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open"):
+def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open",
+           allow_short=False, gross_max=None, borrow_bps=0.0):
     """Walk a price panel bar by bar applying a cross-sectional strategy; return the
     equity curve.
 
     panels: {"Close": (date x ticker) DataFrame, "Open": same} from backtest.universe.
     strategy: CrossSectionalStrategy — target_weights(closes, i) -> Series or None (hold).
     fill: "next_open" (honest, default) or "close" (validation/optimistic).
+    allow_short / gross_max: enable long-short and cap gross exposure (see MultiPortfolio).
+    borrow_bps: annual borrow cost (basis points) charged daily on short notional.
     """
     closes, opens = panels["Close"], panels["Open"]
     dates = closes.index
     n = len(dates)
-    pf = MultiPortfolio(initial_capital)
+    pf = MultiPortfolio(initial_capital, allow_short=allow_short, gross_max=gross_max)
+    daily_borrow = (borrow_bps / 10_000.0) / TRADING_DAYS if borrow_bps else 0.0
     equity = np.empty(n)
     pending = None
 
@@ -99,6 +145,8 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
                 pf.rebalance(w, closes.iloc[i], cost)
         else:
             raise ValueError(f"unknown fill mode {fill!r}")
+        if daily_borrow:
+            pf.accrue_borrow(closes.iloc[i], daily_borrow)  # holding cost on shorts, on today's book
         equity[i] = pf.equity(closes.iloc[i])              # mark at today's close
 
     return pd.Series(equity, index=dates, name="equity")
