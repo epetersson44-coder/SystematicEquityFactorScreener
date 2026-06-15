@@ -309,6 +309,28 @@ def test_held_name_delisting_does_not_poison_equity():
     assert (eq.to_numpy() > 0).all()
 
 
+def test_rebalance_away_from_delisted_name_stays_finite():
+    # A is held, then delists (NaN); a later rebalance targets only B (drops A). The engine
+    # can't sell A at no price, so it leaves A frozen at its last price — equity stays finite,
+    # not NaN. This is the REAL survivorship case the factor backtest hits: the schedule
+    # re-ranks each quarter and drops dead names, trying to trade out of the unpriceable.
+    n = 60
+    a = np.concatenate([np.full(30, 100.0), np.full(n - 30, np.nan)])    # A delists at bar 30
+    b = 100 * (1.001) ** np.arange(n)
+    panels = make_panel(np.column_stack([a, b]), tickers=["A", "B"])
+
+    class HoldThenSwitch(CrossSectionalStrategy):
+        def target_weights(self, closes, i):
+            if i == 0:
+                return pd.Series({"A": 0.5, "B": 0.5})                   # buy both
+            if i == 40:
+                return pd.Series({"B": 1.0})                            # drop A (delisted) -> all B
+            return None
+    eq = run_xs(panels, HoldThenSwitch(), fill="close")
+    assert np.all(np.isfinite(eq.to_numpy())), "rebalancing away from a delisted name poisoned equity"
+    assert (eq.to_numpy() > 0).all()
+
+
 def test_monte_carlo_long_short_finite():
     # Long-short equity CAN go negative (a short can blow up), so the invariant relaxes
     # from >0 to just FINITE — across many random universes, with cost + borrow.

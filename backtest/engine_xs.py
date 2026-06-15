@@ -101,12 +101,16 @@ class MultiPortfolio:
             delta = target_shares.get(t, 0.0) - self.shares.get(t, 0.0)
             if abs(delta) < 1e-12:
                 continue
-            p = prices[t]
+            p = prices.get(t, np.nan)
+            if not np.isfinite(p) or p <= 0:
+                continue                                   # can't trade an unpriceable (delisted)
+                                                           # name -> leave the position frozen
             f = cost(delta, p) if cost else 0.0
             self.cash -= delta * p + f                     # signed: buying spends, shorting adds cash
             fee += f
             if t in target_shares:
                 self.shares[t] = target_shares[t]
+                self._last_px[t] = p                       # seed carry-forward from the fill price
             else:
                 self.shares.pop(t, None)
         return fee
