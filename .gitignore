@@ -2,3 +2,7 @@
 # secrets — never commit
 .env
 .env.*
+
+# python bytecode — never commit
+__pycache__/
+*.pyc

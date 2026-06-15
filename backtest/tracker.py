@@ -36,23 +36,45 @@ def momentum_picks(refresh=False):
     return weights, closes.iloc[i], closes.index[i].date().isoformat()
 
 
-def factor_picks(top_n=5):
-    """Today's top-`top_n` names from Erik's 5-factor screener: (weights, prices, asof).
+def _screen_picks(top_n=5, source="simfin", candidate_mult=5, min_candidates=25):
+    """Rank the full scrubbed universe, then take the top `top_n` names that have a
+    LIVE price today: (weights, prices_now, asof).
 
-    Reuses the screener's OWN scoring (score.py at the repo root) with its live
-    yfinance fundamentals fetch — a real, current ranking of its universe, equal-
-    weighted. The headline résumé artifact, going live."""
+    Why not just `ranked.head(top_n)`? SimFin's fundamentals run ~12 months behind, so
+    a top-ranked name can already have been acquired or delisted since the data vintage
+    (FARO, GLT, ...). Such a name can't be held in a live book, so we walk DOWN the
+    ranking to the next priceable name. This is NOT survivorship bias — a stock that no
+    longer trades simply can't be bought today; the pick is made now and tracked
+    forward, and a real future delisting (while held) still drags the record down."""
     try:
-        import score as screener
-        from config import TICKERS
+        from screen import run_screen
     except ImportError as e:                                  # needs the repo root on path
-        raise RuntimeError(f"can't import the screener — run from the repo root: {e}")
-    ranked = screener.score(screener.build_factor_table(TICKERS)).dropna(subset=["composite"])
-    picks = ranked.head(top_n)["ticker"].tolist()
+        raise RuntimeError(f"can't import the screen — run from the repo root: {e}")
+    ranked = run_screen(source=source)
+    if ranked.empty:
+        raise RuntimeError("screen returned no names with a valid composite")
+    candidates = ranked.head(max(top_n * candidate_mult, min_candidates))["ticker"].tolist()
+    closes = download_panel(candidates)["Close"]
+    last = closes.iloc[-1]
+    priced = [t for t in candidates                          # keep ranking order
+              if t in last.index and pd.notna(last[t]) and last[t] > 0]
+    picks = priced[:top_n]
     if not picks:
-        raise RuntimeError("screener returned no names with a valid composite")
-    closes = download_panel(picks)["Close"]
-    return pd.Series(1.0 / len(picks), index=picks), closes.iloc[-1], closes.index[-1].date().isoformat()
+        raise RuntimeError("no top-ranked screen name has a live price")
+    if len(picks) < top_n:
+        print(f"[factor] only {len(picks)}/{top_n} top names are priceable today — locking those")
+    return pd.Series(1.0 / len(picks), index=picks), last[picks], closes.index[-1].date().isoformat()
+
+
+def factor_picks(top_n=5):
+    """Today's top-`top_n` names from the SCALED, scrubbed small-cap value screen,
+    equal-weighted and held forward: (weights, prices, asof).
+
+    This is screen.py over the full ~4,300-name SimFin universe — $300M–$5B band,
+    ex-financials/REITs, Altman-Z distress scrub, Beneish-M manipulation scrub — ranked
+    by the same 5-factor composite. It replaced the original 15-name yfinance watchlist
+    on 2026-06-15; the immutable June 15-name lock stays in the record as history."""
+    return _screen_picks(top_n=top_n)
 
 
 PICKERS = {"momentum": momentum_picks, "factor": factor_picks}
