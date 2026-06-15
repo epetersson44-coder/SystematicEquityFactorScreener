@@ -16,8 +16,10 @@ import pandas as pd
 
 from backtest import metrics, baseline, costs
 from backtest.engine import Portfolio, run
-from backtest.strategy import Strategy, BuyAndHold, SMACrossover
-from backtest.tests._helpers import make_df, random_walk as make_rw, ConstantWeight as ConstW
+from backtest.engine_xs import MultiPortfolio, run_xs
+from backtest.strategy import Strategy, BuyAndHold, SMACrossover, CrossSectionalStrategy
+from backtest.tests._helpers import (make_df, random_walk as make_rw, ConstantWeight as ConstW,
+                                     make_panel, random_panel)
 import backtest.data as data
 
 warnings.simplefilter("ignore")          # we WANT to see numeric edge behavior raw
@@ -260,6 +262,171 @@ def probe_real_spy_if_cached():
     ok = finite(eq) and (eq > 0).all()
     record("ok" if ok else "BUG", "real SPY end-to-end",
            f"CAGR {s['cagr']*100:.2f}% Sharpe {s['sharpe']:.2f} DDdur {s['max_dd_duration_days']}d")
+
+
+# ================================================================ long-short (xs) probes
+# Try to BREAK the cross-sectional long-short engine: short blowups, the gross cap at its
+# exact boundary, market-neutral immunity under extreme moves, absurd borrow, a short on a
+# delisting name, sign-flips through zero, signed conservation, look-ahead in short mode.
+
+class XSFixed(CrossSectionalStrategy):
+    """Set signed target weights once (at bar `at`), then hold."""
+    def __init__(self, weights, at=0):
+        self.w = pd.Series(weights, dtype=float); self.at = at
+    def target_weights(self, closes, i):
+        return self.w if i == self.at else None
+
+class XSLongShortRandom(CrossSectionalStrategy):
+    """Random SIGNED weights every `every` bars at a target gross exposure."""
+    def __init__(self, seed, every=7, k=6, gross=1.5):
+        self.rng = np.random.default_rng(seed); self.every = every; self.k = k; self.gross = gross
+    def target_weights(self, closes, i):
+        if i == 0 or i % self.every != 0:
+            return None
+        avail = closes.iloc[i].dropna().index
+        if len(avail) == 0:
+            return None
+        k = min(self.k, len(avail))
+        pick = self.rng.choice(np.asarray(avail), size=k, replace=False)
+        w = self.rng.normal(0, 1, k); w = w / np.abs(w).sum() * self.gross
+        return pd.Series(w, index=pick)
+
+
+def probe_xs_all_short_book():
+    panels = random_panel(300, 6, seed=11)
+    eq = run_xs(panels, XSFixed({c: -1 / 6 for c in panels["Close"].columns}),
+                fill="close", allow_short=True, gross_max=1.0)
+    record("ok" if finite(eq) else "BUG", "xs 100% short book", f"final={eq.iloc[-1]:.0f}")
+
+def probe_xs_short_blowup():
+    # short a name that rips 100x: the loss is UNBOUNDED. Equity SHOULD go deeply negative
+    # but MUST stay finite — the engine must report a blown short honestly, not clamp at 0.
+    n = 120
+    p = np.concatenate([np.full(20, 100.0), np.linspace(100, 10_000, n - 20)])
+    panels = make_panel(p.reshape(-1, 1), tickers=["A"])
+    eq = run_xs(panels, XSFixed({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0)
+    went_neg = (eq.to_numpy() < 0).any()
+    record("ok" if finite(eq) and went_neg else "BUG", "xs short blowup (name 100x)",
+           f"finite={finite(eq)} went_negative={went_neg} min={eq.min():,.0f}")
+
+def probe_xs_gross_cap_boundary():
+    prices = pd.Series({"A": 10., "B": 20., "C": 5.})
+    at = expect_raise(lambda: MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+                      .rebalance(pd.Series({"A": 1.0, "B": -1.0}), prices))          # gross 2.0 exactly
+    over = expect_raise(lambda: MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+                        .rebalance(pd.Series({"A": 1.0, "B": -1.0, "C": -0.01}), prices), ValueError)  # 2.01
+    ok = (at is None) and isinstance(over, ValueError)
+    record("ok" if ok else "BUG", "xs gross cap boundary (2.0 ok, >2 rejected)",
+           f"at_cap_ok={at is None} over_rejected={bool(over)}")
+
+def probe_xs_long_only_rail():
+    # default (no allow_short) must STILL reject a negative weight — the safety rail.
+    e = expect_raise(lambda: MultiPortfolio(10_000).rebalance(
+        pd.Series({"A": 0.5, "B": -0.1}), pd.Series({"A": 10., "B": 20.})), ValueError)
+    record("ok" if e else "BUG", "xs long-only rail rejects short",
+           "rejected" if e else "ACCEPTED negative — rail down!")
+
+def probe_xs_dollar_neutral_market_immune():
+    # identical names, dollar-neutral, with a ~50x market rip: equity must stay flat.
+    n = 200
+    col = 100 * (1 + 0.02) ** np.arange(n)
+    panels = make_panel(np.repeat(col.reshape(-1, 1), 4, axis=1))
+    w = {"T0": 0.5, "T1": 0.5, "T2": -0.5, "T3": -0.5}
+    eq = run_xs(panels, XSFixed(w), fill="close", allow_short=True, gross_max=2.0)
+    dev = float(np.max(np.abs(eq.to_numpy() - 10_000)))
+    record("ok" if finite(eq) and dev < 1e-2 else "BUG", "xs dollar-neutral immune to 50x market",
+           f"max_dev={dev:.2e}")
+
+def probe_xs_longs_pay_no_borrow():
+    # borrow charges SHORTS only — a long book with absurd borrow_bps must stay flat.
+    panels = make_panel(np.full((100, 1), 100.0), tickers=["A"])
+    eq = run_xs(panels, XSFixed({"A": 1.0}), fill="close", allow_short=True, gross_max=1.0, borrow_bps=1e6)
+    flat = np.allclose(eq.to_numpy(), 10_000)
+    record("ok" if flat else "BUG", "xs longs pay no borrow", f"flat={flat}")
+
+def probe_xs_borrow_extremes():
+    panels = make_panel(np.full((100, 1), 100.0), tickers=["A"])
+    huge = run_xs(panels, XSFixed({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0, borrow_bps=1e6)
+    zero = run_xs(panels, XSFixed({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0, borrow_bps=0)
+    ok = finite(huge) and np.allclose(zero.to_numpy(), 10_000) and huge.iloc[-1] < zero.iloc[-1]
+    record("ok" if ok else "BUG", "xs borrow extremes (1e6 bps vs 0)",
+           f"huge_final={huge.iloc[-1]:,.0f} zero_flat={np.allclose(zero.to_numpy(), 10_000)}")
+
+def probe_xs_short_delisting():
+    # a SHORT whose name delists (NaN) mid-hold: equity must stay finite (carry-forward).
+    n = 60
+    a = 100 * (1.001) ** np.arange(n)
+    b = np.concatenate([np.full(30, 100.0), np.full(n - 30, np.nan)])
+    panels = make_panel(np.column_stack([a, b]), tickers=["A", "B"])
+    eq = run_xs(panels, XSFixed({"A": 0.5, "B": -0.5}), fill="close", allow_short=True, gross_max=1.0)
+    record("ok" if finite(eq) else "BUG", "xs short on a delisting name",
+           f"finite={finite(eq)} final={eq.iloc[-1]:,.0f}")
+
+def probe_xs_single_name_short():
+    panels = make_panel((100 * 0.999 ** np.arange(150)).reshape(-1, 1), tickers=["A"])
+    eq = run_xs(panels, XSFixed({"A": -1.0}), fill="close", allow_short=True, gross_max=1.0)
+    record("ok" if finite(eq) and eq.iloc[-1] > 10_000 else "BUG",
+           "xs single-name short (declining)", f"final={eq.iloc[-1]:,.0f}")
+
+def probe_xs_sign_flip_turnover():
+    # flip a name long<->short every rebalance: trades THROUGH zero. Cost must drag, equity finite.
+    panels = random_panel(300, 3, seed=21)
+    class Flip(CrossSectionalStrategy):
+        def target_weights(self, closes, i):
+            if i % 5:
+                return None
+            return pd.Series({closes.columns[0]: 1.0 if (i // 5) % 2 == 0 else -1.0})
+    free = run_xs(panels, Flip(), fill="close", allow_short=True, gross_max=1.0)
+    paid = run_xs(panels, Flip(), fill="close", allow_short=True, gross_max=1.0, cost=costs.proportional(50))
+    ok = finite(paid) and paid.iloc[-1] < free.iloc[-1]
+    record("ok" if ok else "BUG", "xs sign-flip turnover (long<->short thru 0)",
+           f"free={free.iloc[-1]:,.0f} paid={paid.iloc[-1]:,.0f}")
+
+def probe_xs_signed_conservation():
+    # cash + sum(shares*close) == equity every bar, and drop == fee, WITH shorts + cost.
+    panels = random_panel(400, 8, seed=31)
+    closes, opens = panels["Close"], panels["Open"]
+    cost = costs.proportional(25)
+    pf = MultiPortfolio(10_000, allow_short=True, gross_max=2.0)
+    strat = XSLongShortRandom(seed=31, every=5, k=5, gross=1.6)
+    pending, acct, feee = None, 0.0, 0.0
+    for i in range(len(closes)):
+        if pending is not None:
+            pre = pf.equity(opens.iloc[i]); fee = pf.rebalance(pending, opens.iloc[i], cost)
+            post = pf.equity(opens.iloc[i]); feee = max(feee, abs((pre - post) - fee)); pending = None
+        w = strat.target_weights(closes, i)
+        if w is not None:
+            pending = w
+        direct = pf.cash + sum(sh * closes.iloc[i][t] for t, sh in pf.shares.items())
+        acct = max(acct, abs(direct - pf.equity(closes.iloc[i])))
+    ok = acct < 1e-9 and feee < 1e-7
+    record("ok" if ok else "BUG", "xs signed money conservation under cost",
+           f"acct_err={acct:.1e} fee_err={feee:.1e}")
+
+def probe_xs_lookahead_short_many():
+    panels = random_panel(220, 10, seed=41)
+    mk = lambda: XSLongShortRandom(seed=41, every=7, k=5)
+    base = run_xs(panels, mk(), cost=costs.proportional(10), allow_short=True, borrow_bps=150).to_numpy()
+    worst = 0.0
+    for T in (5, 40, 90, 140, 200):
+        c = {k: df.copy() for k, df in panels.items()}
+        for df in c.values():
+            df.iloc[T + 1:] = df.iloc[T + 1:] * 8.0
+        after = run_xs(c, mk(), cost=costs.proportional(10), allow_short=True, borrow_bps=150).to_numpy()
+        worst = max(worst, float(np.max(np.abs(base[:T + 1] - after[:T + 1]))))
+    record("ok" if worst == 0.0 else "BUG", "xs look-ahead (short) @ 5 splits", f"max past-diff={worst:.2e}")
+
+def probe_xs_monte_carlo_long_short():
+    bad = []; t0 = time.time()
+    for seed in range(150):
+        k = int(np.random.default_rng(seed).integers(4, 12))
+        panels = random_panel(150, k, vol=0.03, seed=seed)            # high vol -> stress
+        eq = run_xs(panels, XSLongShortRandom(seed=seed, every=6, gross=1.8),
+                    cost=costs.proportional(20), allow_short=True, borrow_bps=200)
+        if not finite(eq):
+            bad.append(seed)
+    record("ok" if not bad else "BUG", "xs Monte Carlo 150 long-short universes (hi-vol)",
+           f"{time.time() - t0:.1f}s, nonfinite={len(bad)}")
 
 
 # small utility used above (make_df / make_rw / ConstW come from _helpers)
