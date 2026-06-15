@@ -93,6 +93,70 @@ def test_raises_on_empty_screen():
     raise AssertionError("expected RuntimeError on empty screen")
 
 
+# ----------------------------------------------- long-short book (factor_ls)
+def _short_ranked(tickers, legs=None):
+    """A short-screen ranking frame: best-first by short_score, with a short_legs col."""
+    n = len(tickers)
+    legs = legs if legs is not None else [3] * n
+    return pd.DataFrame({"ticker": tickers,
+                         "short_score": [float(n - i) for i in range(n)],
+                         "short_legs": legs})
+
+
+def _run_ls(longs, shorts, prices, top_n=5, short_legs=None, min_legs=2):
+    """Call factor_ls_picks with run_screen / run_short_screen / download_panel stubbed."""
+    orig = (screen.run_screen, screen.run_short_screen, tracker.download_panel)
+    screen.run_screen = lambda *a, **k: _ranked(longs)
+    screen.run_short_screen = lambda *a, **k: _short_ranked(shorts, short_legs)
+    tracker.download_panel = _panel_factory(prices)
+    try:
+        return tracker.factor_ls_picks(top_n=top_n, min_legs=min_legs)
+    finally:
+        screen.run_screen, screen.run_short_screen, tracker.download_panel = orig
+
+
+_LS_PX = {t: 10.0 for t in ["L1", "L2", "L3", "L4", "L5", "L6",
+                            "S1", "S2", "S3", "S4", "S5", "S6"]}
+
+
+def test_ls_book_is_dollar_neutral():
+    w, prices, _ = _run_ls(["L1", "L2", "L3", "L4", "L5", "L6"],
+                           ["S1", "S2", "S3", "S4", "S5", "S6"], _LS_PX, top_n=5)
+    assert abs(float(w.sum())) < 1e-12                       # net ~ 0
+    assert abs(float(w.abs().sum()) - 1.0) < 1e-12           # gross 1.0
+    assert (w[w > 0] == 0.1).all() and (w[w < 0] == -0.1).all()
+    assert len(w[w > 0]) == 5 and len(w[w < 0]) == 5
+
+
+def test_ls_overlap_resolved_long():
+    # "A" tops both screens -> it must be LONG only, never short.
+    px = {t: 10.0 for t in ["A", "B", "C", "D", "E", "F", "G", "H", "I"]}
+    w, _, _ = _run_ls(["A", "B", "C", "D", "E"], ["A", "F", "G", "H", "I"], px, top_n=5)
+    assert w["A"] > 0                                        # kept long
+    assert "A" not in w[w < 0].index                        # not also shorted
+    assert set(w[w < 0].index) == {"F", "G", "H", "I"}      # A dropped from shorts
+
+
+def test_ls_min_legs_filters_thin_shorts():
+    # S1, S3 have only 1 signal leg -> excluded as shorts (need >= 2 by default).
+    px = {t: 10.0 for t in ["L1", "L2", "L3", "S1", "S2", "S3", "S4", "S5"]}
+    w, _, _ = _run_ls(["L1", "L2", "L3"], ["S1", "S2", "S3", "S4", "S5"], px,
+                      top_n=3, short_legs=[1, 3, 1, 2, 3])
+    shorts = set(w[w < 0].index)
+    assert "S1" not in shorts and "S3" not in shorts        # thin (1-leg) shorts dropped
+    assert shorts == {"S2", "S4", "S5"}
+
+
+def test_ls_raises_when_no_shorts_survive():
+    # Every short name has only 1 leg -> none pass min_legs -> no short side -> raise.
+    px = {t: 10.0 for t in ["L1", "L2", "L3", "S1", "S2", "S3"]}
+    try:
+        _run_ls(["L1", "L2", "L3"], ["S1", "S2", "S3"], px, top_n=3, short_legs=[1, 1, 1])
+    except RuntimeError:
+        return
+    raise AssertionError("expected RuntimeError when no short names survive the leg filter")
+
+
 if __name__ == "__main__":
     import sys
     tests = sorted((n, f) for n, f in globals().items()

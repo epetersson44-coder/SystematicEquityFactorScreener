@@ -36,21 +36,16 @@ def momentum_picks(refresh=False):
     return weights, closes.iloc[i], closes.index[i].date().isoformat()
 
 
-def _screen_picks(top_n=5, source="simfin", candidate_mult=5, min_candidates=25):
-    """Rank the full scrubbed universe, then take the top `top_n` names that have a
-    LIVE price today: (weights, prices_now, asof).
+def _priceable_topn(ranked, top_n, candidate_mult=5, min_candidates=25):
+    """Walk DOWN a ranking and return the top `top_n` names with a LIVE price today:
+    (picks_list, last_prices Series, asof).
 
-    Why not just `ranked.head(top_n)`? SimFin's fundamentals run ~12 months behind, so
-    a top-ranked name can already have been acquired or delisted since the data vintage
-    (FARO, GLT, ...). Such a name can't be held in a live book, so we walk DOWN the
-    ranking to the next priceable name. This is NOT survivorship bias — a stock that no
-    longer trades simply can't be bought today; the pick is made now and tracked
-    forward, and a real future delisting (while held) still drags the record down."""
-    try:
-        from screen import run_screen
-    except ImportError as e:                                  # needs the repo root on path
-        raise RuntimeError(f"can't import the screen — run from the repo root: {e}")
-    ranked = run_screen(source=source)
+    Why not just `ranked.head(top_n)`? SimFin's fundamentals run ~12 months behind, so a
+    top-ranked name can already have been acquired or delisted since the data vintage
+    (FARO, GLT, ...). Such a name can't be held in a live book, so we skip to the next
+    priceable name. NOT survivorship bias — a stock that no longer trades can't be bought
+    today; the pick is made now and tracked forward, and a real future delisting (while
+    held) still drags the record down."""
     if ranked.empty:
         raise RuntimeError("screen returned no names with a valid composite")
     candidates = ranked.head(max(top_n * candidate_mult, min_candidates))["ticker"].tolist()
@@ -60,10 +55,20 @@ def _screen_picks(top_n=5, source="simfin", candidate_mult=5, min_candidates=25)
               if t in last.index and pd.notna(last[t]) and last[t] > 0]
     picks = priced[:top_n]
     if not picks:
-        raise RuntimeError("no top-ranked screen name has a live price")
+        raise RuntimeError("no top-ranked name has a live price")
+    return picks, last[picks], closes.index[-1].date().isoformat()
+
+
+def _screen_picks(top_n=5, source="simfin"):
+    """Top-`top_n` priceable names from the long screen, equal-weighted: (weights, prices, asof)."""
+    try:
+        from screen import run_screen
+    except ImportError as e:                                  # needs the repo root on path
+        raise RuntimeError(f"can't import the screen — run from the repo root: {e}")
+    picks, prices, asof = _priceable_topn(run_screen(source=source), top_n)
     if len(picks) < top_n:
         print(f"[factor] only {len(picks)}/{top_n} top names are priceable today — locking those")
-    return pd.Series(1.0 / len(picks), index=picks), last[picks], closes.index[-1].date().isoformat()
+    return pd.Series(1.0 / len(picks), index=picks), prices, asof
 
 
 def factor_picks(top_n=5):
@@ -77,7 +82,41 @@ def factor_picks(top_n=5):
     return _screen_picks(top_n=top_n)
 
 
-PICKERS = {"momentum": momentum_picks, "factor": factor_picks}
+def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
+    """Today's DOLLAR-NEUTRAL long-short book: (weights, prices, asof).
+
+    Long the top-`top_n` priceable names of the LONG screen (scrubbed value), short the
+    top-`top_n` of the inverted SHORT screen (distress/manipulation as signals). Signed
+    weights sum to net ~0 with gross 1.0 — $5k long / $5k short on $10k, the unlevered
+    market-neutral spread. A short must have `min_legs` signals firing (default 2) so
+    it's a real distress/manipulation short, not bottom-of-factor noise. A name landing
+    on BOTH sides is kept LONG (resolve the contradiction in the long book's favor).
+
+    Benched vs CASH, not SPY (the book is market-neutral — see report()). NOTE: the
+    paper chain does not yet model borrow cost on the shorts (the backtest engine does);
+    at ~2%/yr on a $5k short that's ~$8/mo, a documented v1 simplification."""
+    try:
+        from screen import run_screen, run_short_screen
+    except ImportError as e:                                  # needs the repo root on path
+        raise RuntimeError(f"can't import the screen — run from the repo root: {e}")
+    long_names, long_px, asof = _priceable_topn(run_screen(source=source), top_n)
+    short_ranked = run_short_screen(source=source)
+    if min_legs and not short_ranked.empty:
+        short_ranked = short_ranked[short_ranked["short_legs"] >= min_legs]
+    short_names, short_px, _ = _priceable_topn(short_ranked, top_n)
+    short_names = [t for t in short_names if t not in long_names]   # long wins any overlap
+    if not short_names:
+        raise RuntimeError("no priceable short names after de-overlap")
+
+    weights = pd.concat([pd.Series(0.5 / len(long_names), index=long_names),
+                         pd.Series(-0.5 / len(short_names), index=short_names)])
+    prices = pd.concat([long_px, short_px])
+    prices = prices[~prices.index.duplicated(keep="first")].reindex(weights.index)
+    return weights, prices, asof
+
+
+PICKERS = {"momentum": momentum_picks, "factor": factor_picks, "factor_ls": factor_ls_picks}
+MARKET_NEUTRAL = {"factor_ls"}          # benched vs cash, not SPY (beta is hedged out)
 
 
 def lock(strategy="momentum", refresh=False):
@@ -163,11 +202,21 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
     spy_close = get_prices("SPY", refresh=refresh)["Close"]
 
     eq, s = _simulate(recs, closes, spy_close, initial)
-    print(f"Managed ${initial:,.0f} paper portfolio ({strategy}), {s['start']} -> {s['end']}:")
-    print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
-    print(f"  SPY      : ${s['spy_final']:>11,.0f}   ({s['spy_ret'] * 100:+.1f}%)")
-    print(f"  excess   : {(s['ret'] - s['spy_ret']) * 100:+.1f}%")
-    print(f"  ({len(recs)} monthly lock(s) chained; rebalances into new picks each month)")
+    if strategy in MARKET_NEUTRAL:
+        # market-neutral: the honest benchmark is CASH, not SPY (beta is hedged out, so
+        # "excess vs SPY" would be a category error). SPY shown only for context.
+        print(f"Managed ${initial:,.0f} market-NEUTRAL paper book ({strategy}), {s['start']} -> {s['end']}:")
+        print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
+        print(f"  cash(0%) : ${initial:>11,.0f}   (+0.0%)   <- honest benchmark (rf would refine it)")
+        print(f"  alpha    : {s['ret'] * 100:+.1f}%")
+        print(f"  (SPY over span {s['spy_ret'] * 100:+.1f}% — context only, NOT the benchmark for a neutral book)")
+        print(f"  ({len(recs)} lock(s) chained; dollar-neutral ~$5k long / $5k short, borrow not modeled)")
+    else:
+        print(f"Managed ${initial:,.0f} paper portfolio ({strategy}), {s['start']} -> {s['end']}:")
+        print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
+        print(f"  SPY      : ${s['spy_final']:>11,.0f}   ({s['spy_ret'] * 100:+.1f}%)")
+        print(f"  excess   : {(s['ret'] - s['spy_ret']) * 100:+.1f}%")
+        print(f"  ({len(recs)} monthly lock(s) chained; rebalances into new picks each month)")
 
     now = closes.iloc[-1]
     rows = []
