@@ -86,6 +86,22 @@ def test_gm_stability_skips_nan_and_matches_std():
     assert abs(get_gm_stability(f) - np.std([0.4, 0.3], ddof=1)) < 1e-9
 
 
+def test_score_direction_good_beats_bad():
+    # GUARDRAIL: the composite is "higher = better" (sorted descending, top picked). A name
+    # that's cheaper, higher-ROIC, more stable and lower-debt on EVERY factor must rank #1.
+    # This catches the inverted-ranking bug (pre-2026-06-15 the screen bought the worst names).
+    import pandas as pd
+    from score import score
+    df = pd.DataFrame([
+        {"ticker": "GOOD", "ev_ebit": 5,  "price_fcf": 5,  "roic": 0.30, "gm_stability": 0.01, "net_debt_ebitda": 0.5},
+        {"ticker": "MID",  "ev_ebit": 10, "price_fcf": 10, "roic": 0.15, "gm_stability": 0.05, "net_debt_ebitda": 2.0},
+        {"ticker": "BAD",  "ev_ebit": 20, "price_fcf": 20, "roic": 0.05, "gm_stability": 0.10, "net_debt_ebitda": 4.0},
+    ])
+    ranked = score(df)
+    assert list(ranked["ticker"]) == ["GOOD", "MID", "BAD"], "composite ranking is inverted"
+    assert ranked.iloc[0]["composite"] > ranked.iloc[-1]["composite"]
+
+
 def test_altman_z_known():
     f = canon(total_assets=1000.0, total_liabilities=400.0, current_assets=500.0,
               current_liabilities=200.0, retained_earnings=300.0, ebit=150.0,

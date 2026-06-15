@@ -19,16 +19,20 @@ def build_factor_table(tickers, source="yfinance"):
 def score(df):
     scored = df.copy()
 
-    # Lower is better for these — invert ranking
+    # The composite is "higher = better" (we sort descending and take the top). So each
+    # factor's percentile must put the GOOD direction at ~100:
+    #   lower-is-better (cheap/stable/low-debt) -> ascending=False  (low value -> high pct)
+    #   higher-is-better (roic)                 -> ascending=True   (high value -> high pct)
+    # (These flags were both inverted before 2026-06-15 — the screen was ranking by the
+    # NEGATIVE of the intended signal, i.e. buying the worst names. Caught by the honest
+    # point-in-time backtest; pinned by test_score_direction.)
     lower_is_better = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]
 
     for factor in WEIGHTS.keys():
         if factor not in df.columns:
             continue
-        if factor in lower_is_better:
-            scored[f"{factor}_pct"] = df[factor].rank(ascending=True, pct=True) * 100
-        else:
-            scored[f"{factor}_pct"] = df[factor].rank(ascending=False, pct=True) * 100
+        ascending = factor not in lower_is_better       # higher-better -> ascending; lower-better -> not
+        scored[f"{factor}_pct"] = df[factor].rank(ascending=ascending, pct=True) * 100
 
     # Composite weighted score — averaged over the factors each company
     # actually has, re-normalizing the weights. (A plain weighted sum lets
