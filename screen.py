@@ -27,8 +27,11 @@ def simfin_universe():
 
 
 def run_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX_CAP,
-               exclude_sectors=EXCLUDE_SECTORS, min_z=MIN_Z, max_m=MAX_M):
-    """Filter the universe (band → ex-financials → distress → manipulators) then rank."""
+               exclude_sectors=EXCLUDE_SECTORS, min_z=MIN_Z, max_m=MAX_M, sector_neutral=True):
+    """Filter the universe (band → ex-financials → distress → manipulators) then rank.
+    sector_neutral=True (default) ranks each factor within its sector — the honest
+    point-in-time backtest showed plain ranking took a big accidental sector bet (cheap
+    energy/cyclicals) worth ~9%/yr; ranking within sector removes it (see factor_backtest)."""
     if tickers is None:
         tickers = simfin_universe() if source == "simfin" else None
     rows = []
@@ -57,9 +60,10 @@ def run_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX_CAP,
         rec["market_cap"] = mc
         rec["altman_z"] = z
         rec["beneish_m"] = m
+        rec["sector"] = f.get("sector")                  # for sector-neutral ranking
         rows.append(rec)
     df = pd.DataFrame(rows)
-    ranked = score(df).dropna(subset=["composite"]) if not df.empty else df
+    ranked = score(df, sector_neutral=sector_neutral).dropna(subset=["composite"]) if not df.empty else df
     print(f"universe {len(tickers)} -> dropped {dropped['off_band']} off-band, "
           f"{dropped['financial']} financials/REITs, {dropped['distress']} distressed, "
           f"{dropped['manipulator']} manipulators -> {len(df)} screened, "
@@ -101,13 +105,14 @@ def run_short_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX
         rec["market_cap"] = mc
         rec["altman_z"] = altman_z(f)
         rec["beneish_m"] = beneish_m(f)
+        rec["sector"] = f.get("sector")                          # for sector-neutral ranking
         rows.append(rec)
     df = pd.DataFrame(rows)
     if df.empty:
         print("short universe -> 0 names")
         return df
 
-    ranked = score(df).dropna(subset=["composite"])              # need a real factor read
+    ranked = score(df, sector_neutral=True).dropna(subset=["composite"])   # need a real factor read
     inv = 100.0 - ranked["composite"]                            # bad fundamentals -> high
     distress = ranked["altman_z"].rank(pct=True, ascending=False) * 100   # low Z -> high
     manip = ranked["beneish_m"].rank(pct=True, ascending=True) * 100      # high M -> high

@@ -16,8 +16,16 @@ def build_factor_table(tickers, source="yfinance"):
             print(f"Skipping {ticker}: {e}")
     return pd.DataFrame(rows)
 
-def score(df):
+def score(df, sector_neutral=False):
+    """Percentile-rank each factor and combine into a composite (higher = better).
+
+    sector_neutral=True ranks each factor WITHIN its sector (needs a 'sector' column),
+    so a name is judged against its sector peers, not the whole universe. This removes
+    accidental sector BETS — the screen picks the best in each sector instead of dumping
+    into whichever sector is cheapest-for-a-reason (a value trap). Breadth-preserving:
+    the fix for the concentration drag seen in the factor backtest."""
     scored = df.copy()
+    use_sectors = sector_neutral and "sector" in scored.columns
 
     # The composite is "higher = better" (we sort descending and take the top). So each
     # factor's percentile must put the GOOD direction at ~100:
@@ -32,7 +40,10 @@ def score(df):
         if factor not in df.columns:
             continue
         ascending = factor not in lower_is_better       # higher-better -> ascending; lower-better -> not
-        scored[f"{factor}_pct"] = df[factor].rank(ascending=ascending, pct=True) * 100
+        if use_sectors:
+            scored[f"{factor}_pct"] = scored.groupby("sector")[factor].rank(ascending=ascending, pct=True) * 100
+        else:
+            scored[f"{factor}_pct"] = df[factor].rank(ascending=ascending, pct=True) * 100
 
     # Composite weighted score — averaged over the factors each company
     # actually has, re-normalizing the weights. (A plain weighted sum lets

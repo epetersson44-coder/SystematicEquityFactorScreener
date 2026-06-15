@@ -53,11 +53,12 @@ def daily_panel():
     return _PANEL
 
 
-def screen_asof(asof, close_row, universe):
+def screen_asof(asof, close_row, universe, sector_neutral=False):
     """Rank `universe` by the 5-factor composite using POINT-IN-TIME fundamentals as of
     `asof`, applying the same funnel as the live screen (band → ex-financials → Altman-Z
     → Beneish-M → rank). `close_row` is a Series ticker->price at `asof`, used for the
-    point-in-time market cap. Returns the ranked long-side DataFrame."""
+    point-in-time market cap. sector_neutral ranks within sector (see score()). Returns
+    the ranked long-side DataFrame."""
     rows = []
     for t in universe:
         price = close_row.get(t)
@@ -77,9 +78,10 @@ def screen_asof(asof, close_row, universe):
             continue
         rec = calculate_factors(f)
         rec["market_cap"] = mc
+        rec["sector"] = f.get("sector")                      # for sector-neutral ranking
         rows.append(rec)
     df = pd.DataFrame(rows)
-    return score(df).dropna(subset=["composite"]) if not df.empty else df
+    return score(df, sector_neutral=sector_neutral).dropna(subset=["composite"]) if not df.empty else df
 
 
 class ScheduledWeights(CrossSectionalStrategy):
@@ -91,12 +93,13 @@ class ScheduledWeights(CrossSectionalStrategy):
         return self.sched.get(closes.index[i])
 
 
-def build_schedules(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS"):
+def build_schedules(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", sector_neutral=False):
     """At each rebalance date, compute BOTH baskets, point-in-time:
       - top: the top-`top_n` factor picks (equal weight)
       - universe: the WHOLE eligible (band+scrubbed) universe, equal weight — the FAIR,
         same-style benchmark that isolates the factor SIGNAL from the small-cap-value style.
-    Returns (top_schedule, universe_schedule). freq: 'QS' quarterly (default), 'MS' monthly."""
+    sector_neutral ranks within sector (see score()). Returns (top_schedule, universe_schedule).
+    freq: 'QS' quarterly (default), 'MS' monthly."""
     panel = daily_panel()
     close = panel["Close"]
     dates = close.index
@@ -106,7 +109,7 @@ def build_schedules(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS"):
         if target > dates[-1]:
             break
         d = dates[dates.searchsorted(target)]                # first trading day on/after
-        ranked = screen_asof(d, close.loc[d], universe)
+        ranked = screen_asof(d, close.loc[d], universe, sector_neutral=sector_neutral)
         if ranked.empty:
             continue
         names = ranked["ticker"].tolist()
@@ -137,10 +140,11 @@ def _stats(eq, label):
             "cagr": metrics.cagr(eq), "sharpe": metrics.sharpe(eq), "maxdd": metrics.max_drawdown(eq)}
 
 
-def run_factor_backtest(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", cost_bps=30):
+def run_factor_backtest(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", cost_bps=30,
+                        sector_neutral=False):
     """Point-in-time, survivorship-aware backtest. Returns (factor_eq, uni_eq, spy_eq, stats)
     — the factor top-N vs the equal-weight eligible universe (fair, same-style) vs SPY."""
-    top_sched, uni_sched = build_schedules(top_n, start, end, freq)
+    top_sched, uni_sched = build_schedules(top_n, start, end, freq, sector_neutral)
     if not top_sched:
         raise RuntimeError("no rebalance produced picks — check the date window / data")
     panel = daily_panel()
