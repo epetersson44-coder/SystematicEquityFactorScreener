@@ -6,3 +6,4 @@
 # python bytecode — never commit
 __pycache__/
 *.pyc
+_factor_obs.csv

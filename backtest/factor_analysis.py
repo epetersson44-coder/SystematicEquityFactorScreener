@@ -15,6 +15,8 @@
 #
 # Run:  python -m backtest.factor_analysis
 
+import os
+
 import numpy as np
 import pandas as pd
 
@@ -26,11 +28,15 @@ from config import WEIGHTS
 
 FACTORS = list(WEIGHTS.keys())                       # ev_ebit, price_fcf, roic, gm_stability, net_debt_ebitda
 LOWER_BETTER = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]
+OBS_CSV = os.path.join(os.path.dirname(__file__), "_factor_obs.csv")
 
 
-def collect(start="2021-07-01", end="2025-03-01", freq="QS"):
+def collect(start="2021-07-01", end="2025-03-01", freq="QS", refresh=False):
     """Per eligible name per rebalance: the 5 factor values + the forward return to the
-    next rebalance (survivorship-honest — a name that delists is marked at its last price)."""
+    next rebalance (survivorship-honest — a name that delists is marked at its last price).
+    Cached to _factor_obs.csv so weight-scheme bake-offs are instant."""
+    if not refresh and os.path.exists(OBS_CSV):
+        return pd.read_csv(OBS_CSV, parse_dates=["date"])
     close = daily_panel()["Close"]
     dates = close.index
     universe = list(close.columns)
@@ -65,7 +71,9 @@ def collect(start="2021-07-01", end="2025-03-01", freq="QS"):
             rec["date"] = d
             rec["fwd"] = float(p1) / float(p0) - 1
             rows.append(rec)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    out.to_csv(OBS_CSV, index=False)
+    return out
 
 
 def signal(df):
@@ -113,6 +121,47 @@ def quintile_spread(sig):
     return res
 
 
+# Pre-committed weight schemes — NOT tuned to the data (that would be overfitting). Each is
+# a principled rule decided in advance from the IC finding (quality carries it, 2 factors dead).
+SCHEMES = {
+    "current":   WEIGHTS,                                              # arbitrary status quo
+    "equal":     {f: 0.20 for f in FACTORS},                          # robust default
+    "drop_dead": {"ev_ebit": 1 / 3, "roic": 1 / 3, "gm_stability": 1 / 3,
+                  "price_fcf": 0.0, "net_debt_ebitda": 0.0},           # drop the 2 dead, equal-weight rest
+    "quality":   {"roic": 0.5, "gm_stability": 0.5, "ev_ebit": 0.0,
+                  "price_fcf": 0.0, "net_debt_ebitda": 0.0},           # only the 2 significant factors
+}
+
+
+def bakeoff(sig, schemes=SCHEMES, n_top=20, min_factors=4):
+    """Race weight schemes on a FIXED, production-consistent universe (names with >=
+    `min_factors` of the 5 factors). Each scheme's composite is the weighted average over
+    the factors a name actually has (re-normalized, exactly like score()), so missing data
+    can't bias one scheme's universe vs another's. Benchmark = equal-weight eligible universe."""
+    S = sig[FACTORS]
+    base = sig[S.notna().sum(axis=1) >= min_factors].copy()       # one universe for all schemes
+    Sb = base[FACTORS]
+    uni = base.groupby("date")["fwd"].mean()
+    out = {}
+    for name, w in schemes.items():
+        W = pd.Series({f: w.get(f, 0.0) for f in FACTORS})
+        avail_w = Sb.notna().mul(W, axis=1).sum(axis=1)           # weight of the factors present
+        comp = Sb.mul(W, axis=1).sum(axis=1) / avail_w.replace(0, np.nan)   # re-normalized avg
+        rets = base.assign(comp=comp).dropna(subset=["comp"]).groupby("date").apply(
+            lambda g: g.nlargest(n_top, "comp")["fwd"].mean(), include_groups=False)
+        ex = rets - uni
+        out[name] = {"cum_%": round(((1 + rets).prod() - 1) * 100, 1),
+                     "mean_q_%": round(rets.mean() * 100, 2),
+                     "sharpe": round(rets.mean() / rets.std() * np.sqrt(4), 2) if rets.std() else np.nan,
+                     "excess_ann_%": round(ex.mean() * 4 * 100, 2),
+                     "beat_univ": round((ex > 0).mean(), 2)}
+    out["[universe EW]"] = {"cum_%": round(((1 + uni).prod() - 1) * 100, 1),
+                            "mean_q_%": round(uni.mean() * 100, 2),
+                            "sharpe": round(uni.mean() / uni.std() * np.sqrt(4), 2),
+                            "excess_ann_%": 0.0, "beat_univ": np.nan}
+    return pd.DataFrame(out).T
+
+
 if __name__ == "__main__":
     df = collect()
     sig = signal(df)
@@ -129,3 +178,9 @@ if __name__ == "__main__":
     print("\n=== FACTOR REDUNDANCY (signal-vs-signal rank correlation) ===")
     print(corr_matrix(sig).to_string())
     print("\n  >0.6 between two factors = largely the same bet, double-counted.")
+
+    print("\n=== WEIGHT-SCHEME BAKE-OFF (top-20 basket, point-in-time, survivorship-free) ===")
+    print(bakeoff(sig).to_string())
+    print("\n  excess_ann_% = annualized return OVER the same-style eligible universe (the fair test);")
+    print("  beat_univ = share of quarters ahead of it. Pre-committed schemes, NOT tuned.")
+    print("  14 quarters in a value-hostile regime — directional, not statistically decisive.")
