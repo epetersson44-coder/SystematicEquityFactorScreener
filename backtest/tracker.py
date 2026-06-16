@@ -26,14 +26,29 @@ from backtest.strategy import CrossSectionalMomentum
 PICKS_DIR = os.path.join(os.path.dirname(__file__), "picks")
 
 
+def _market_risk_on(refresh=False, ma=200):
+    """Trend-filter regime: is SPY above its `ma`-day average? Below it = downtrend."""
+    spy = get_prices("SPY", refresh=refresh)["Close"]
+    if len(spy) < ma:
+        return True
+    return float(spy.iloc[-1]) > float(spy.iloc[-ma:].mean())
+
+
 def momentum_picks(refresh=False):
-    """Today's cross-sectional momentum basket: (weights, prices_now, data_asof)."""
+    """Today's cross-sectional momentum basket WITH the trend-filter failsafe: if SPY is
+    below its 200-day average (downtrend), hold CASH this month instead of the book.
+    Validated 2005-2026 (momentum_ls.py): halves max drawdown (-59%->-30%), dodged the 2008
+    crash, lifts Sharpe 0.79->0.89. Returns (weights, prices_now, data_asof); weights is
+    EMPTY when risk-off — a cash month, which the simulator/desk treat as flat."""
     closes = get_universe("sp500", refresh=refresh)["Close"]
     i = len(closes) - 1
+    asof = closes.index[i].date().isoformat()
+    if not _market_risk_on(refresh=refresh):
+        return pd.Series(dtype=float), closes.iloc[i], asof        # risk-off -> cash
     weights = CrossSectionalMomentum().rank(closes, i)
     if weights is None:
         raise RuntimeError("not enough history to rank the universe")
-    return weights, closes.iloc[i], closes.index[i].date().isoformat()
+    return weights, closes.iloc[i], asof
 
 
 def _priceable_topn(ranked, top_n, candidate_mult=5, min_candidates=25):
@@ -137,6 +152,8 @@ def lock(strategy="momentum", refresh=False):
         "lock_prices": {t: round(float(prices[t]), 4) for t in weights.index},
         "spy_lock": round(spy_close, 4),
     }
+    if strategy == "momentum":                           # record the trend-filter regime
+        rec["regime"] = "risk_on" if rec["n"] else "risk_off (cash)"
     out_dir = os.path.join(PICKS_DIR, strategy)
     os.makedirs(out_dir, exist_ok=True)
     month = rec["lock_date"][:7]                          # one lock per calendar month
@@ -146,9 +163,11 @@ def lock(strategy="momentum", refresh=False):
     path = os.path.join(out_dir, f"{rec['lock_date']}.json")
     with open(path, "w") as f:
         json.dump(rec, f, indent=2)
-    print(f"locked {rec['n']} {strategy} picks (data as of {asof}) -> {os.path.relpath(path)}")
-    top = sorted(rec["picks"], key=lambda t: -rec["lock_prices"][t])[:8]
-    print(f"  sample names: {', '.join(sorted(rec['picks'])[:12])} ...")
+    if rec["n"] == 0:
+        print(f"locked {strategy}: RISK-OFF — cash this month (SPY below its 200-day) -> {os.path.relpath(path)}")
+    else:
+        print(f"locked {rec['n']} {strategy} picks (data as of {asof}) -> {os.path.relpath(path)}")
+        print(f"  sample names: {', '.join(sorted(rec['picks'])[:12])} ...")
     return rec
 
 

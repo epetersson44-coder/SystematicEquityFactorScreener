@@ -47,6 +47,17 @@ def _book(strategy, smap):
     recs = [json.load(open(os.path.join(d, f))) for f in files]
     rec, prev = recs[-1], (recs[-2] if len(recs) >= 2 else None)
     names = list(rec["picks"])
+    if not names:                                       # risk-off / cash month -> flat book
+        spy = get_prices("SPY", refresh=True)["Close"]
+        ss = spy[spy.index >= pd.to_datetime(rec["data_asof"])]
+        spyeq = 10_000 * ss / ss.iloc[0]
+        return {"strategy": strategy, "lock": rec["lock_date"], "asof": rec["data_asof"],
+                "neutral": strategy in T.MARKET_NEUTRAL, "final": 10_000.0, "ret": 0.0,
+                "spyret": round(float(spyeq.iloc[-1] / 10_000 - 1) * 100, 2),
+                "pos": [], "sectors": [{"s": "Cash", "w": 100.0}],
+                "curve": [{"d": i.strftime("%m/%d"), "v": 10_000.0} for i in ss.index],
+                "spyc": [{"d": i.strftime("%m/%d"), "v": round(float(v), 1)} for i, v in spyeq.items()],
+                "diff": None}
     panel = download_panel(names)["Close"]
     lock = pd.to_datetime(rec["data_asof"])
     seg = panel[panel.index >= lock]
@@ -105,6 +116,8 @@ def _daily_book(strategy):
         return None
     recs = sorted((json.load(open(os.path.join(d, f))) for f in files), key=lambda r: r["data_asof"])
     names = sorted({t for r in recs for t in r["picks"]})
+    if not names:                                       # every lock was cash -> nothing to chart
+        return None
     panel = download_panel(names)["Close"]
     bounds = [pd.to_datetime(r["data_asof"]) for r in recs] + [panel.index[-1]]
     value, pieces = 10_000.0, []
@@ -112,8 +125,11 @@ def _daily_book(strategy):
         seg = panel[(panel.index >= bounds[k]) & (panel.index <= bounds[k + 1])]
         if seg.empty:
             continue
-        shares = {t: value * rec["picks"][t] / rec["lock_prices"][t] for t in rec["picks"]}
-        eq = seg.mul(pd.Series(shares)).sum(axis=1).dropna()
+        if not rec["picks"]:                             # cash segment (risk-off) -> flat
+            eq = pd.Series(value, index=seg.index)
+        else:
+            shares = {t: value * rec["picks"][t] / rec["lock_prices"][t] for t in rec["picks"]}
+            eq = seg.mul(pd.Series(shares)).sum(axis=1).dropna()
         if eq.empty:
             continue
         last = k == len(recs) - 1

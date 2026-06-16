@@ -157,6 +157,30 @@ def test_ls_raises_when_no_shorts_survive():
     raise AssertionError("expected RuntimeError when no short names survive the leg filter")
 
 
+# ----------------------------------------------- momentum trend-filter failsafe
+def test_market_risk_on_above_and_below_ma():
+    orig = tracker.get_prices
+    rising = pd.Series(range(1, 300), index=pd.bdate_range("2020-01-01", periods=299))
+    falling = pd.Series(range(300, 1, -1), index=pd.bdate_range("2020-01-01", periods=299))
+    try:
+        tracker.get_prices = lambda *a, **k: pd.DataFrame({"Close": rising})
+        assert tracker._market_risk_on() is True            # last > 200-day mean -> risk on
+        tracker.get_prices = lambda *a, **k: pd.DataFrame({"Close": falling})
+        assert tracker._market_risk_on() is False           # last < 200-day mean -> risk off
+    finally:
+        tracker.get_prices = orig
+
+
+def test_simulate_cash_month_is_flat():
+    # A risk-off lock has empty picks; the managed portfolio must hold flat through it.
+    recs = [{"data_asof": "2026-01-02", "picks": {}}]
+    dates = pd.to_datetime(["2026-01-02", "2026-02-02"])
+    closes = pd.DataFrame({"A": [100.0, 130.0]}, index=dates)   # A soared, but we held cash
+    spy = pd.Series([400.0, 440.0], index=dates)
+    _, s = tracker._simulate(recs, closes, spy, 10_000.0)
+    assert abs(s["final"] - 10_000.0) < 1e-6                # cash -> dead flat, missed the move
+
+
 if __name__ == "__main__":
     import sys
     tests = sorted((n, f) for n, f in globals().items()
