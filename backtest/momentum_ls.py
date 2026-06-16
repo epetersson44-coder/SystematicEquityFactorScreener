@@ -25,7 +25,7 @@ import pandas as pd
 from backtest.universe import get_universe
 from backtest.data import get_prices
 from backtest.engine_xs import run_xs
-from backtest.strategy import CrossSectionalStrategy
+from backtest.strategy import CrossSectionalStrategy, CrossSectionalMomentum
 from backtest import metrics, costs
 from backtest.constants import TRADING_DAYS, INITIAL_CAPITAL
 
@@ -110,17 +110,43 @@ def run_comparison(start="2005-01-01"):
     return rows, curves
 
 
-def _crash_return(eq, lo="2009-02-01", hi="2009-06-30"):
+def run_long_only(panel, cost_bps=10):
+    """Long-only top-decile momentum (the LIVE book's strategy), fully invested."""
+    return run_xs(panel, CrossSectionalMomentum(), cost=costs.proportional(cost_bps), fill="next_open")
+
+
+def run_long_only_comparison(start="2005-01-01"):
+    """Backtest the LIVE long-only momentum book with the failsafes vs SPY. The long book
+    carries market beta, so its real risk is the market crash (2008) — the trend filter (cash
+    below the 200-day) is the natural guard. Returns (rows, curves)."""
+    panel = get_universe("sp500", start=start)
+    market = get_prices("SPY")["Close"]
+    lo = run_long_only(panel)
+    vm = vol_managed(lo, target_vol=0.13)
+    tf = trend_filtered(lo, market)
+    both = trend_filtered(vm, market)
+    spy = market[market.index >= lo.index[0]]
+    spy_eq = INITIAL_CAPITAL * spy / spy.iloc[0]
+    curves = {"long-only momentum (live)": lo, "+ vol-managed": vm,
+              "+ trend filter (failsafe)": tf, "+ both": both, "SPY buy&hold": spy_eq}
+    return [_row(n, e) for n, e in curves.items()], curves
+
+
+def _crash_return(eq, lo="2008-09-01", hi="2009-03-31"):
     seg = eq[(eq.index >= lo) & (eq.index <= hi)]
     return (seg.iloc[-1] / seg.iloc[0] - 1) * 100 if len(seg) > 1 else float("nan")
 
 
 if __name__ == "__main__":
+    print("\n########## LONG-ONLY momentum (the live book) + failsafe — option A ##########")
+    lrows, lcurves = run_long_only_comparison()
+    print(pd.DataFrame(lrows).to_string(index=False))
+    print("\n--- the 2008 market crash (Sep 2008 - Mar 2009) ---")
+    for n, e in lcurves.items():
+        print(f"  {n:<28} {_crash_return(e):+6.1f}%")
+
+    print("\n\n########## LONG-SHORT momentum (for reference — why we don't) ##########")
     rows, curves = run_comparison()
-    print("\n=== Momentum long-short, harvested harder (S&P, 2005-2026, cost+borrow) ===")
     print(pd.DataFrame(rows).to_string(index=False))
-    print("\n=== The 2009 momentum crash (Feb-Jun 2009) — does the failsafe work? ===")
-    for n, e in curves.items():
-        print(f"  {n:<32} {_crash_return(e):+6.1f}%")
-    print("\n  SURVIVORSHIP-INFLATED (today's S&P constituents); the crash mechanics + failsafe")
-    print("  behaviour are real, the absolute returns are not. Vol-managed leverage cost not re-modelled.")
+    print("\n  SURVIVORSHIP-INFLATED (today's S&P constituents); crash mechanics + failsafe behaviour")
+    print("  are real, absolute returns are not. Vol-managed leverage cost not re-modelled.")
