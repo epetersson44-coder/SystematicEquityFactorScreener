@@ -162,6 +162,48 @@ def bakeoff(sig, schemes=SCHEMES, n_top=20, min_factors=4):
     return pd.DataFrame(out).T
 
 
+def _comp(sig, weights, min_factors=4):
+    """Re-normalized composite on the production-consistent universe; returns base df + comp."""
+    S = sig[FACTORS]
+    base = sig[S.notna().sum(axis=1) >= min_factors].copy()
+    Sb, W = base[FACTORS], pd.Series({f: weights.get(f, 0.0) for f in FACTORS})
+    aw = Sb.notna().mul(W, axis=1).sum(axis=1)
+    base["comp"] = Sb.mul(W, axis=1).sum(axis=1) / aw.replace(0, np.nan)
+    return base.dropna(subset=["comp"])
+
+
+def _stat(rets):
+    return {"cum_%": round(((1 + rets).prod() - 1) * 100, 1),
+            "mean_q_%": round(rets.mean() * 100, 2),
+            "sharpe": round(rets.mean() / rets.std() * np.sqrt(4), 2) if rets.std() else np.nan,
+            "ann_%": round(rets.mean() * 4 * 100, 2)}
+
+
+def breadth(sig, weights=WEIGHTS, min_factors=4):
+    """Does BREADTH harvest the factor spread the concentrated book can't? Compares long-only
+    baskets of widening size against the universe, and pure long-short (top vs bottom by
+    composite, dollar-neutral) — which strips out the market and isolates the factor spread."""
+    base = _comp(sig, weights, min_factors)
+    uni = base.groupby("date")["fwd"].mean()
+
+    def long_n(n):
+        return base.groupby("date").apply(
+            lambda g: g.nlargest(n if n >= 1 else max(1, int(len(g) * n)), "comp")["fwd"].mean(),
+            include_groups=False)
+
+    def ls(frac):                                            # long top frac, short bottom frac
+        def f(g):
+            k = max(1, int(len(g) * frac)); s = g.sort_values("comp", ascending=False)
+            return s["fwd"].iloc[:k].mean() - s["fwd"].iloc[-k:].mean()
+        return base.groupby("date").apply(f, include_groups=False)
+
+    rows = {"long top-5": _stat(long_n(5)), "long top-20": _stat(long_n(20)),
+            "long top-quintile": _stat(long_n(0.2)), "long top-half": _stat(long_n(0.5)),
+            "[universe EW]": _stat(uni),
+            "L/S decile (10/10)": _stat(ls(0.1)), "L/S quintile (20/20)": _stat(ls(0.2))}
+    return pd.DataFrame(rows).T
+
+
 if __name__ == "__main__":
     df = collect()
     sig = signal(df)
@@ -184,3 +226,9 @@ if __name__ == "__main__":
     print("\n  excess_ann_% = annualized return OVER the same-style eligible universe (the fair test);")
     print("  beat_univ = share of quarters ahead of it. Pre-committed schemes, NOT tuned.")
     print("  14 quarters in a value-hostile regime — directional, not statistically decisive.")
+
+    print("\n=== BREADTH TEST (does a wider / long-short book harvest the spread?) ===")
+    print(breadth(sig).to_string())
+    print("\n  long rows carry the universe's beta (compare to [universe EW]); the L/S rows are")
+    print("  MARKET-NEUTRAL (ann_% is the harvested factor spread vs cash). Positive L/S Sharpe")
+    print("  = the factor edge the concentrated top-5/20 book is too narrow to capture.")
