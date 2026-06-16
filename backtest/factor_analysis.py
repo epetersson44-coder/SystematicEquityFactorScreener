@@ -26,8 +26,9 @@ from screen import EXCLUDE_SECTORS, MIN_CAP, MAX_CAP
 from backtest.factor_backtest import daily_panel
 from config import WEIGHTS
 
-FACTORS = list(WEIGHTS.keys())                       # ev_ebit, price_fcf, roic, gm_stability, net_debt_ebitda
-LOWER_BETTER = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]
+FACTORS = list(WEIGHTS.keys())                       # the 5 production value/quality factors
+ANALYSIS_FACTORS = FACTORS + ["momentum"]            # + 12-1 momentum, the orthogonal signal under test
+LOWER_BETTER = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]   # momentum is higher-better
 OBS_CSV = os.path.join(os.path.dirname(__file__), "_factor_obs.csv")
 
 
@@ -46,11 +47,14 @@ def collect(start="2021-07-01", end="2025-03-01", freq="QS", refresh=False):
             break
         rb.append(dates[dates.searchsorted(tgt)])
 
+    SKIP, LOOK = 21, 252                             # 12-1 momentum: skip ~1mo, look back ~12mo
     rows = []
     for k in range(len(rb) - 1):                     # need a forward window
         d, d1 = rb[k], rb[k + 1]
         crow, c1 = close.loc[d], close.loc[d1]
         seg = close[(close.index > d) & (close.index <= d1)]
+        i = dates.get_loc(d)
+        mom = (close.iloc[i - SKIP] / close.iloc[i - SKIP - LOOK] - 1) if i - SKIP - LOOK >= 0 else None
         for t in universe:
             p0 = crow.get(t)
             if p0 is None or not np.isfinite(p0) or p0 <= 0:
@@ -68,6 +72,8 @@ def collect(start="2021-07-01", end="2025-03-01", freq="QS", refresh=False):
             if not np.isfinite(p1) or p1 <= 0:
                 continue
             rec = calculate_factors(f)
+            rec["momentum"] = float(mom[t]) if (mom is not None and t in mom.index
+                                                and np.isfinite(mom.get(t, np.nan))) else np.nan
             rec["date"] = d
             rec["fwd"] = float(p1) / float(p0) - 1
             rows.append(rec)
@@ -81,7 +87,7 @@ def signal(df):
     matching the composite), plus the forward-return rank. Spearman = Pearson on ranks,
     and these columns ARE ranks — so downstream we use plain Pearson (no scipy needed)."""
     out = pd.DataFrame(index=df.index)
-    for f in FACTORS:
+    for f in ANALYSIS_FACTORS:
         asc = f not in LOWER_BETTER                  # higher-is-better ranks ascending
         out[f] = df.groupby("date")[f].rank(ascending=asc, pct=True)
     out["fwd_rank"] = df.groupby("date")["fwd"].rank(pct=True)
@@ -91,7 +97,7 @@ def signal(df):
 
 def ic_table(sig):
     res = {}
-    for f in FACTORS:                                # Pearson(signal_rank, fwd_rank) == Spearman IC
+    for f in ANALYSIS_FACTORS:                       # Pearson(signal_rank, fwd_rank) == Spearman IC
         ics = sig.groupby("date").apply(
             lambda g: g[f].corr(g["fwd_rank"]), include_groups=False).dropna()
         m, s = ics.mean(), ics.std()
@@ -103,14 +109,14 @@ def ic_table(sig):
 
 
 def corr_matrix(sig):                                # Pearson on the rank columns == Spearman
-    mats = [g[FACTORS].corr() for _, g in sig.groupby("date")]
+    mats = [g[ANALYSIS_FACTORS].corr() for _, g in sig.groupby("date")]
     return (sum(mats) / len(mats)).round(2)
 
 
 def quintile_spread(sig):
     """Top-quintile minus bottom-quintile forward return per factor (avg over dates, %)."""
     res = {}
-    for f in FACTORS:
+    for f in ANALYSIS_FACTORS:
         sp = []
         for _, g in sig.groupby("date"):
             top = g.loc[g[f] >= 0.8, "fwd"].mean()
@@ -163,12 +169,14 @@ def bakeoff(sig, schemes=SCHEMES, n_top=20, min_factors=4):
 
 
 def _comp(sig, weights, min_factors=4):
-    """Re-normalized composite on the production-consistent universe; returns base df + comp."""
-    S = sig[FACTORS]
-    base = sig[S.notna().sum(axis=1) >= min_factors].copy()
-    Sb, W = base[FACTORS], pd.Series({f: weights.get(f, 0.0) for f in FACTORS})
-    aw = Sb.notna().mul(W, axis=1).sum(axis=1)
-    base["comp"] = Sb.mul(W, axis=1).sum(axis=1) / aw.replace(0, np.nan)
+    """Re-normalized composite over the weighted factors, on a FIXED universe: >= min_factors
+    of the 5 value factors AND momentum present — so value-only, momentum-only and combined
+    schemes all race on the SAME names."""
+    base = sig[(sig[FACTORS].notna().sum(axis=1) >= min_factors) & sig["momentum"].notna()].copy()
+    S = base[ANALYSIS_FACTORS]
+    W = pd.Series({f: weights.get(f, 0.0) for f in ANALYSIS_FACTORS})
+    aw = S.notna().mul(W, axis=1).sum(axis=1)
+    base["comp"] = S.mul(W, axis=1).sum(axis=1) / aw.replace(0, np.nan)
     return base.dropna(subset=["comp"])
 
 
@@ -191,16 +199,16 @@ def breadth(sig, weights=WEIGHTS, min_factors=4):
             lambda g: g.nlargest(n if n >= 1 else max(1, int(len(g) * n)), "comp")["fwd"].mean(),
             include_groups=False)
 
-    def ls(frac):                                            # long top frac, short bottom frac
+    def ls(k):                                               # long top k, short bottom k (k<1 => fraction)
         def f(g):
-            k = max(1, int(len(g) * frac)); s = g.sort_values("comp", ascending=False)
-            return s["fwd"].iloc[:k].mean() - s["fwd"].iloc[-k:].mean()
+            n = k if k >= 1 else max(1, int(len(g) * k)); s = g.sort_values("comp", ascending=False)
+            return s["fwd"].iloc[:n].mean() - s["fwd"].iloc[-n:].mean()
         return base.groupby("date").apply(f, include_groups=False)
 
-    rows = {"long top-5": _stat(long_n(5)), "long top-20": _stat(long_n(20)),
-            "long top-quintile": _stat(long_n(0.2)), "long top-half": _stat(long_n(0.5)),
+    rows = {"long top-20": _stat(long_n(20)), "long top-quintile": _stat(long_n(0.2)),
             "[universe EW]": _stat(uni),
-            "L/S decile (10/10)": _stat(ls(0.1)), "L/S quintile (20/20)": _stat(ls(0.2))}
+            "L/S 5/5": _stat(ls(5)), "L/S 15/15": _stat(ls(15)), "L/S 30/30": _stat(ls(30)),
+            "L/S 50/50": _stat(ls(50)), "L/S quintile (~250/side)": _stat(ls(0.2))}
     return pd.DataFrame(rows).T
 
 
@@ -227,8 +235,15 @@ if __name__ == "__main__":
     print("  beat_univ = share of quarters ahead of it. Pre-committed schemes, NOT tuned.")
     print("  14 quarters in a value-hostile regime — directional, not statistically decisive.")
 
-    print("\n=== BREADTH TEST (does a wider / long-short book harvest the spread?) ===")
-    print(breadth(sig).to_string())
-    print("\n  long rows carry the universe's beta (compare to [universe EW]); the L/S rows are")
-    print("  MARKET-NEUTRAL (ann_% is the harvested factor spread vs cash). Positive L/S Sharpe")
-    print("  = the factor edge the concentrated top-5/20 book is too narrow to capture.")
+    print("\n=== BREADTH × MODEL: value/quality vs MOMENTUM vs combined ===")
+    models = {
+        "value+quality (5)": WEIGHTS,
+        "momentum only":     {"momentum": 1.0},
+        "all 6 equal":       {**{f: 1.0 for f in FACTORS}, "momentum": 1.0},
+    }
+    for label, w in models.items():
+        print(f"\n-- {label} --")
+        print(breadth(sig, weights=w).to_string())
+    print("\n  Same names for all three (value-covered + momentum present). L/S rows are market-")
+    print("  neutral. The question: does momentum (alone or combined) turn positive at a TRADEABLE")
+    print("  size where value/quality couldn't — i.e. is it the orthogonal edge this regime rewards?")
