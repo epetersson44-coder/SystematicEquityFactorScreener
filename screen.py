@@ -9,7 +9,7 @@
 
 import pandas as pd
 
-from fundamentals import get_fundamentals, _simfin_load
+from fundamentals import get_fundamentals, _simfin_load, piotroski_fscore
 from factors import calculate_factors, altman_z, beneish_m
 from score import score
 
@@ -61,6 +61,7 @@ def run_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX_CAP,
         rec["altman_z"] = z
         rec["beneish_m"] = m
         rec["sector"] = f.get("sector")                  # for sector-neutral ranking
+        rec["fscore"] = piotroski_fscore(t)              # Piotroski F-Score (quality)
         rows.append(rec)
     df = pd.DataFrame(rows)
     ranked = score(df, sector_neutral=sector_neutral).dropna(subset=["composite"]) if not df.empty else df

@@ -3,13 +3,17 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-# Factor weights — must sum to 1.0
+# Factor weights — must sum to 1.0. Tilted toward the factors with POSITIVE information
+# coefficient in the point-in-time study (factor_analysis.py): F-Score (best IC, 0.116) and
+# the quality factors (roic, gm_stability) carry more; the weak/dead value factors carry
+# less. A principled evidence tilt, NOT an optimization (we did not fish weights for return).
 WEIGHTS = {
-    "ev_ebit":         0.25,
-    "price_fcf":       0.15,
-    "roic":            0.30,
-    "gm_stability":    0.10,
-    "net_debt_ebitda": 0.20,
+    "fscore":          0.25,   # Piotroski F-Score — highest IC, the documented quality upgrade
+    "roic":            0.20,   # quality (positive IC)
+    "gm_stability":    0.15,   # quality (positive IC)
+    "ev_ebit":         0.20,   # value (weak but kept for style)
+    "price_fcf":       0.10,   # value (weak)
+    "net_debt_ebitda": 0.10,   # leverage (weak)
 }
 
 TICKERS = [

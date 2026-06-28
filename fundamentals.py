@@ -371,17 +371,12 @@ def simfin_fundamentals_asof(ticker, asof, price=None):
                              d["sector"].get(ticker), rev_hist, gp_hist)
 
 
-def piotroski_fscore_asof(ticker, asof):
-    """Piotroski F-Score (0-9), POINT-IN-TIME from SimFin. A 9-signal fundamental-strength
-    score (Piotroski 2000) — the documented value-screen upgrade. Needs TWO years; None if
-    a name lacks them or the denominators. Higher = stronger fundamentals.
+def _piotroski(inc_t, inc_p, bal_t, bal_p, cf_t):
+    """The 9-signal F-Score from two years of statement rows (shared by the live + as-of
+    paths). 0-9; None if a required field or denominator is missing.
       Profitability: ROA>0, CFO>0, ROA rising, CFO>NetIncome (accruals).
       Leverage/liq:  long-term debt ratio falling, current ratio rising, no share dilution.
       Efficiency:    gross margin rising, asset turnover rising."""
-    d = _simfin_load()
-    inc_t, inc_p = _two_from(_rows_asof(d["income"], ticker, asof))
-    bal_t, bal_p = _two_from(_rows_asof(d["balance"], ticker, asof))
-    cf_t, _ = _two_from(_rows_asof(d["cashflow"], ticker, asof))
     if any(r is None for r in (inc_t, inc_p, bal_t, bal_p, cf_t)):
         return None
 
@@ -416,6 +411,24 @@ def piotroski_fscore_asof(ticker, asof):
     s += (gp_t / rev_t) > (gp_p / rev_p)                  # 8  gross margin rising
     s += (rev_t / ta_t) > (rev_p / ta_p)                  # 9  asset turnover rising
     return int(s)
+
+
+def piotroski_fscore_asof(ticker, asof):
+    """Piotroski F-Score (0-9) as of `asof` — point-in-time (for backtests)."""
+    d = _simfin_load()
+    inc_t, inc_p = _two_from(_rows_asof(d["income"], ticker, asof))
+    bal_t, bal_p = _two_from(_rows_asof(d["balance"], ticker, asof))
+    cf_t, _ = _two_from(_rows_asof(d["cashflow"], ticker, asof))
+    return _piotroski(inc_t, inc_p, bal_t, bal_p, cf_t)
+
+
+def piotroski_fscore(ticker):
+    """Piotroski F-Score (0-9) from the LATEST two reported years (for the live screen)."""
+    d = _simfin_load()
+    inc_t, inc_p = _two_latest(d["income"], ticker)
+    bal_t, bal_p = _two_latest(d["balance"], ticker)
+    cf_t = _latest(d["cashflow"], ticker)
+    return _piotroski(inc_t, inc_p, bal_t, bal_p, cf_t)
 
 
 def _simfin_market_cap(prices, ticker):
