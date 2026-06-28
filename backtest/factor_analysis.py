@@ -20,15 +20,15 @@ import os
 import numpy as np
 import pandas as pd
 
-from fundamentals import get_fundamentals_asof
+from fundamentals import get_fundamentals_asof, piotroski_fscore_asof
 from factors import calculate_factors
 from screen import EXCLUDE_SECTORS, MIN_CAP, MAX_CAP
 from backtest.factor_backtest import daily_panel
 from config import WEIGHTS
 
 FACTORS = list(WEIGHTS.keys())                       # the 5 production value/quality factors
-ANALYSIS_FACTORS = FACTORS + ["momentum"]            # + 12-1 momentum, the orthogonal signal under test
-LOWER_BETTER = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]   # momentum is higher-better
+ANALYSIS_FACTORS = FACTORS + ["momentum", "fscore"]  # + 12-1 momentum + Piotroski F-Score, under test
+LOWER_BETTER = ["ev_ebit", "price_fcf", "gm_stability", "net_debt_ebitda"]   # momentum/fscore higher-better
 OBS_CSV = os.path.join(os.path.dirname(__file__), "_factor_obs.csv")
 
 
@@ -74,6 +74,8 @@ def collect(start="2021-07-01", end="2025-03-01", freq="QS", refresh=False):
             rec = calculate_factors(f)
             rec["momentum"] = float(mom[t]) if (mom is not None and t in mom.index
                                                 and np.isfinite(mom.get(t, np.nan))) else np.nan
+            fs = piotroski_fscore_asof(t, d)
+            rec["fscore"] = float(fs) if fs is not None else np.nan
             rec["date"] = d
             rec["fwd"] = float(p1) / float(p0) - 1
             rows.append(rec)
@@ -172,7 +174,8 @@ def _comp(sig, weights, min_factors=4):
     """Re-normalized composite over the weighted factors, on a FIXED universe: >= min_factors
     of the 5 value factors AND momentum present — so value-only, momentum-only and combined
     schemes all race on the SAME names."""
-    base = sig[(sig[FACTORS].notna().sum(axis=1) >= min_factors) & sig["momentum"].notna()].copy()
+    base = sig[(sig[FACTORS].notna().sum(axis=1) >= min_factors)
+               & sig["momentum"].notna() & sig["fscore"].notna()].copy()
     S = base[ANALYSIS_FACTORS]
     W = pd.Series({f: weights.get(f, 0.0) for f in ANALYSIS_FACTORS})
     aw = S.notna().mul(W, axis=1).sum(axis=1)
@@ -235,11 +238,13 @@ if __name__ == "__main__":
     print("  beat_univ = share of quarters ahead of it. Pre-committed schemes, NOT tuned.")
     print("  14 quarters in a value-hostile regime — directional, not statistically decisive.")
 
-    print("\n=== BREADTH × MODEL: value/quality vs MOMENTUM vs combined ===")
+    print("\n=== BREADTH × MODEL: value vs quality vs F-Score vs momentum ===")
     models = {
-        "value+quality (5)": WEIGHTS,
-        "momentum only":     {"momentum": 1.0},
-        "all 6 equal":       {**{f: 1.0 for f in FACTORS}, "momentum": 1.0},
+        "value+quality (5)":  WEIGHTS,
+        "F-Score only":       {"fscore": 1.0},
+        "quality + F-Score":  {"roic": 1.0, "gm_stability": 1.0, "fscore": 1.0},
+        "momentum only":      {"momentum": 1.0},
+        "momentum + F-Score": {"momentum": 1.0, "fscore": 1.0},
     }
     for label, w in models.items():
         print(f"\n-- {label} --")

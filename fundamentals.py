@@ -371,6 +371,53 @@ def simfin_fundamentals_asof(ticker, asof, price=None):
                              d["sector"].get(ticker), rev_hist, gp_hist)
 
 
+def piotroski_fscore_asof(ticker, asof):
+    """Piotroski F-Score (0-9), POINT-IN-TIME from SimFin. A 9-signal fundamental-strength
+    score (Piotroski 2000) — the documented value-screen upgrade. Needs TWO years; None if
+    a name lacks them or the denominators. Higher = stronger fundamentals.
+      Profitability: ROA>0, CFO>0, ROA rising, CFO>NetIncome (accruals).
+      Leverage/liq:  long-term debt ratio falling, current ratio rising, no share dilution.
+      Efficiency:    gross margin rising, asset turnover rising."""
+    d = _simfin_load()
+    inc_t, inc_p = _two_from(_rows_asof(d["income"], ticker, asof))
+    bal_t, bal_p = _two_from(_rows_asof(d["balance"], ticker, asof))
+    cf_t, _ = _two_from(_rows_asof(d["cashflow"], ticker, asof))
+    if any(r is None for r in (inc_t, inc_p, bal_t, bal_p, cf_t)):
+        return None
+
+    def g(row, col):
+        return float(row[col]) if (row is not None and col in row and row[col] == row[col]) else None
+
+    ni_t, ni_p = g(inc_t, "Net Income"), g(inc_p, "Net Income")
+    ta_t, ta_p = g(bal_t, "Total Assets"), g(bal_p, "Total Assets")
+    cfo_t = g(cf_t, "Net Cash from Operating Activities")
+    ca_t, ca_p = g(bal_t, "Total Current Assets"), g(bal_p, "Total Current Assets")
+    cl_t, cl_p = g(bal_t, "Total Current Liabilities"), g(bal_p, "Total Current Liabilities")
+    gp_t, gp_p = g(inc_t, "Gross Profit"), g(inc_p, "Gross Profit")
+    rev_t, rev_p = g(inc_t, "Revenue"), g(inc_p, "Revenue")
+    ltd_t = g(bal_t, "Long Term Debt") or 0.0
+    ltd_p = g(bal_p, "Long Term Debt") or 0.0
+    sh_t = g(inc_t, "Shares (Diluted)") or g(inc_t, "Shares (Basic)")
+    sh_p = g(inc_p, "Shares (Diluted)") or g(inc_p, "Shares (Basic)")
+
+    req = [ni_t, ni_p, ta_t, ta_p, cfo_t, ca_t, ca_p, cl_t, cl_p, gp_t, gp_p, rev_t, rev_p]
+    if any(x is None for x in req) or not all([ta_t, ta_p, cl_t, cl_p, rev_t, rev_p]):
+        return None
+
+    roa_t, roa_p = ni_t / ta_t, ni_p / ta_p
+    s = 0
+    s += roa_t > 0                                         # 1  positive ROA
+    s += cfo_t > 0                                         # 2  positive operating cash flow
+    s += roa_t > roa_p                                     # 3  ROA improving
+    s += cfo_t > ni_t                                      # 4  cash earnings > accounting (accruals)
+    s += (ltd_t / ta_t) < (ltd_p / ta_p)                  # 5  leverage falling
+    s += (ca_t / cl_t) > (ca_p / cl_p)                    # 6  current ratio rising
+    s += bool(sh_t is not None and sh_p is not None and sh_t <= sh_p)   # 7  no share dilution
+    s += (gp_t / rev_t) > (gp_p / rev_p)                  # 8  gross margin rising
+    s += (rev_t / ta_t) > (rev_p / ta_p)                  # 9  asset turnover rising
+    return int(s)
+
+
 def _simfin_market_cap(prices, ticker):
     """Latest close x shares outstanding (both from SimFin's shareprices dataset)."""
     try:

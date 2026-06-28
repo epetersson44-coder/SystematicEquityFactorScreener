@@ -7,16 +7,29 @@ from datetime import datetime
 
 # Holdings: ticker -> (shares, cost_basis_total)
 HOLDINGS = {
-    "VTI":  (5.4,  1841.09),
-    "GOOG": (4,    1262.40),
+    "VTI":  (7,    2426.88),
+    "VXUS": (4,     347.56),
     "QQQM": (4.2,  1071.39),
-    "SCHD": (30,    842.71),
+    "AVUV": (3,     364.14),
+    "NVDA": (4,     763.98),
+    "GOOG": (4,    1262.40),
     "AMD":  (1,     218.58),
     "PLTR": (3,     582.24),
-    "NVDA": (2,     351.00),
 }
 
-CASH = 83.05
+# Role of each holding in the core-satellite structure
+ROLES = {
+    "VTI":  "Core",
+    "VXUS": "Core (intl)",
+    "QQQM": "Tech tilt",
+    "AVUV": "Factor sleeve",
+    "NVDA": "Individual",
+    "GOOG": "Individual",
+    "AMD":  "Individual",
+    "PLTR": "Speculative",
+}
+
+CASH = 137.17
 WIKI_PORTFOLIO = "/Users/erik.petersson/Library/Mobile Documents/iCloud~md~obsidian/Documents/ClaudeBrain2.0/Brain2.0/wiki/PERSONAL/portfolio.md"
 
 
@@ -79,16 +92,17 @@ def update_wiki(rows, total_value, total_cost, total_unreal, total_unreal_pct):
     time = datetime.now().strftime("%H:%M")
 
     table_lines = [
-        "| Ticker | Shares | Cost Basis | Cost/Share | Current Price | Market Value | Unrealized G/L | Unrealized % |",
-        "|--------|--------|-----------|------------|---------------|--------------|----------------|--------------|",
+        "| Ticker | Role | Shares | Cost Basis | Cost/Share | Current Price | Market Value | Unrealized G/L | Unrealized % |",
+        "|--------|------|--------|-----------|------------|---------------|--------------|----------------|--------------|",
     ]
     for ticker, shares, cost, cost_per, price, mkt_val, unreal, unreal_pct in rows:
+        role = ROLES.get(ticker, "")
         if price == "N/A":
-            table_lines.append(f"| {ticker} | {shares} | ${cost:,.2f} | ${cost_per:.2f} | N/A | N/A | N/A | N/A |")
+            table_lines.append(f"| {ticker} | {role} | {shares} | ${cost:,.2f} | ${cost_per:.2f} | N/A | N/A | N/A | N/A |")
         else:
             sign = "+" if unreal >= 0 else ""
             table_lines.append(
-                f"| {ticker} | {shares} | ${cost:,.2f} | ${cost_per:.2f} | ${price:,.2f} | ${mkt_val:,.2f} | {sign}${unreal:,.2f} | {sign}{unreal_pct:.2f}% |"
+                f"| {ticker} | {role} | {shares} | ${cost:,.2f} | ${cost_per:.2f} | ${price:,.2f} | ${mkt_val:,.2f} | {sign}${unreal:,.2f} | {sign}{unreal_pct:.2f}% |"
             )
 
     summary = f"""---
@@ -100,7 +114,17 @@ sources: [Memory.md, portfolio.py auto-update]
 
 Last updated: **{date} {time}** (auto-updated by portfolio.py)
 
-See also: [[PERSONAL/profile]], [[PERSONAL/career-plan]], [[FINANCE/dcf-valuation]], [[CODE/factor-screener]], [[synthesis]]
+See also: [[PERSONAL/profile]], [[PERSONAL/career-plan]], [[FINANCE/dcf-valuation]], [[FINANCE/what-works-wall-street]], [[CODE/factor-screener]], [[synthesis]]
+
+---
+
+## Investment Policy (set 2026-06-17)
+
+Goal: **steady, durable compounding** — not a playground for one-off theses. Structure is **core-satellite**:
+- **Core (~65-70%)** — broad index funds held for decades, fed by ongoing contributions. VTI-led, plus international (VXUS).
+- **Satellite (~25-35%)** — individual names + factor tilts where I can take real risk and learn. Cap any single name at ~8-10% so one blowup is a bruise, not a crater. Diversify the *type* of bet, not just the size.
+- **Roth first** once earning — contributions stay withdrawable; only growth is age-locked. Tax-free compounding is the priority vehicle.
+- Cost basis and recent performance are **irrelevant** to hold/sell decisions. The only question: is this the best home for the money going forward?
 
 ---
 
@@ -123,29 +147,35 @@ See also: [[PERSONAL/profile]], [[PERSONAL/career-plan]], [[FINANCE/dcf-valuatio
 
 ## Position Notes
 
-### PLTR — Problem Position
-- **Cost basis:** $194.08/share (3 shares, $582.24 total)
-- **Status:** No real thesis. Blocked on reading an earnings call. Currently underwater.
-- **Decision:** Hold or cut? Read a PLTR earnings call → form an actual thesis or cut.
-- **Action:** Run through [[CODE/factor-screener]] for a fundamental read.
+### VTI — Core
+- The compounding engine — future contributions feed this first. Largest holding by dollar value.
+
+### VXUS — Core, International
+- First non-US exposure (opened 2026-06-17, funded from the SCHD sale). Fills the geography gap — international trades ~40% cheaper than the US (~15x fwd P/E vs ~22x).
+
+### AVUV — Factor Sleeve
+- Avantis US Small-Cap Value (opened 2026-06-17). The small-cap value factor — the most documented premium in academic finance (see [[FINANCE/what-works-wall-street]]), tied to [[CODE/factor-screener]].
+- **Discipline note:** permanent, decades-long sleeve, NOT a momentum chase. It WILL have ugly multi-year stretches — do not panic-sell when it lags; rebalance *into* it when it's down.
 
 ### AMD — Best Performer
-- 1 share, up massively from $218.58 cost. Small position in dollar terms despite large % gain.
+- 1 share, up massively from $218.58 cost. Small in dollars despite the outsized % gain. No thesis beyond the run — decide whether to trim into strength.
 
-### NVDA — Strong, Small Position
-- 2 shares. Cost basis $175.50/share — bought well. Related: [[FINANCE/dcf-valuation]].
+### NVDA — Individual
+- 4 shares, blended cost $191.00. Related: [[FINANCE/dcf-valuation]].
 
-### ETF Overlap Issue
-QQQM is ~25% NVDA, ~7% GOOG, ~5% AMD. Holding QQQM + individual NVDA/GOOG/AMD = concentrated tech bet.
-**Fix options:** Drop QQQM, or drop individual names, or acknowledge it as a deliberate tilt.
+### PLTR — Holding, Check Back in a Year
+- $194.08/share (3 shares). Decision made 2026-06-15: hold and reassess ~June 2027. No action until then.
+
+### Tech Concentration Issue
+QQQM (~25% NVDA, ~7% GOOG, ~5% AMD) + individual NVDA/GOOG/AMD + VTI's tech weight = one big correlated large-cap tech bet. VXUS + AVUV are the first deliberate offset. QQQM is now consciously a **tech tilt within the satellite budget**, not stable core.
 
 ---
 
 ## Open Decisions
 
-1. **PLTR** — hold or cut? Read earnings call first.
-2. **ETF overlap** — clean up the structure.
-3. **Run PLTR through [[CODE/factor-screener]]** before deciding.
+1. **VTI vs AVUS for the core** — whether to shift the core fund to Avantis US Equity (mild value/profitability/size tilt at 0.15%) over time.
+2. **AMD** — trim the winner into strength, or hold? No active thesis.
+3. **Roth IRA** — open and prioritize once earned income starts.
 """
 
     with open(WIKI_PORTFOLIO, "w") as f:
