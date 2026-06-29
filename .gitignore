@@ -7,3 +7,6 @@
 __pycache__/
 *.pyc
 _factor_obs.csv
+
+# project virtualenv
+.venv/

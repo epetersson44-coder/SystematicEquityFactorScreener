@@ -110,17 +110,26 @@ def ticker_cik(refresh=False):
     return out
 
 
+_FACTS_CACHE = {}
+
+
 def company_facts(cik, refresh=False):
-    """The full XBRL company-facts JSON for a CIK. Cached to disk (fetched once). None if 404."""
+    """The full XBRL company-facts JSON for a CIK. Cached to disk (fetched once) AND in memory
+    (the multi-MB JSON is re-read across many as-of calls in a backtest). None if 404."""
+    if not refresh and cik in _FACTS_CACHE:
+        return _FACTS_CACHE[cik]
     path = os.path.join(FACTS_DIR, f"CIK{cik}.json")
     if not refresh and os.path.exists(path):
-        return json.load(open(path))
+        facts = json.load(open(path))
+        _FACTS_CACHE[cik] = facts
+        return facts
     try:
         facts = _get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik}.json")
     except requests.HTTPError:
         return None                                     # some CIKs have no XBRL facts
     os.makedirs(FACTS_DIR, exist_ok=True)
     json.dump(facts, open(path, "w"))
+    _FACTS_CACHE[cik] = facts
     return facts
 
 
