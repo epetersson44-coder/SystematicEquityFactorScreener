@@ -3,17 +3,21 @@
 from dotenv import load_dotenv
 load_dotenv()
 
-# Factor weights — must sum to 1.0. Tilted toward the factors with POSITIVE information
-# coefficient in the point-in-time study (factor_analysis.py): F-Score (best IC, 0.116) and
-# the quality factors (roic, gm_stability) carry more; the weak/dead value factors carry
-# less. A principled evidence tilt, NOT an optimization (we did not fish weights for return).
+# Factor weights — must sum to 1.0. AGNOSTIC EQUAL WEIGHT, by evidence.
+# History: an earlier tilt up-weighted the F-Score to 0.25 on its +0.116 IC in the 2021-2025
+# SimFin window. The full-cycle EDGAR decomposition (backtest/edgar_backtest.decompose_drag,
+# S&P 600, 2011-2026, 8,387 obs) REFUTED that: the F-Score's IC flips to -0.028 (t -2.42, the
+# only SIGNIFICANT factor, and negative) — its weight was overfit to a window, so the F-Score
+# is DROPPED. The five value/quality factors are all statistically dead (|t|<0.6), so there is
+# no evidence to tilt by: equal weight is the honest, no-conviction default. This does NOT lift
+# returns (the whole composite is ~zero IC; the bake-off proved reweighting does nothing) — it
+# just stops us betting on a refuted signal. The screener stands as a rigorous NEGATIVE result.
 WEIGHTS = {
-    "fscore":          0.25,   # Piotroski F-Score — highest IC, the documented quality upgrade
-    "roic":            0.20,   # quality (positive IC)
-    "gm_stability":    0.15,   # quality (positive IC)
-    "ev_ebit":         0.20,   # value (weak but kept for style)
-    "price_fcf":       0.10,   # value (weak)
-    "net_debt_ebitda": 0.10,   # leverage (weak)
+    "ev_ebit":         0.20,   # value
+    "price_fcf":       0.20,   # value
+    "roic":            0.20,   # quality
+    "gm_stability":    0.20,   # quality
+    "net_debt_ebitda": 0.20,   # leverage
 }
 
 TICKERS = [
