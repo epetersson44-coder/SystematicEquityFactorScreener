@@ -74,25 +74,33 @@ class VolTargetTSMOM(CrossSectionalStrategy):
     annualized portfolio vol (estimated from the recent covariance), capped at `max_gross`. So
     the sleeve runs hot when many uncorrelated trends are calm and dials down when vol spikes or
     trends roll over — the mechanism behind trend's smooth risk profile."""
-    def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=2.0):
+    def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=2.0,
+                 long_short=False):
         self.look, self.vol_lb, self.target_vol, self.every, self.max_gross = (
             look, vol_lb, target_vol, every, max_gross)
+        self.long_short = long_short                     # True: SHORT down-trending assets too
 
     def target_weights(self, closes, i):
         if i < self.look or i % self.every != 0:
             return None
         rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
-        on = []
+        sign = {}
         for t in closes.columns:
             p0, pm = closes.iloc[i].get(t), closes.iloc[i - self.look].get(t)
             v = rets[t].std() if t in rets else np.nan
-            if (p0 and pm and np.isfinite(p0) and np.isfinite(pm) and (p0 / pm - 1) > 0
-                    and np.isfinite(v) and v > 0):
-                on.append(t)
-        if not on:
+            if not (p0 and pm and np.isfinite(p0) and np.isfinite(pm) and np.isfinite(v) and v > 0):
+                continue
+            mom = p0 / pm - 1
+            if mom > 0:
+                sign[t] = 1.0
+            elif self.long_short and mom < 0:
+                sign[t] = -1.0                           # short the downtrend (managed-futures style)
+        if not sign:
             return pd.Series(dtype=float)                # all cash
-        w = 1.0 / (rets[on].std() * np.sqrt(252))        # inverse-vol risk weights
-        w = w / w.sum()
+        on = list(sign)
+        invvol = 1.0 / (rets[on].std() * np.sqrt(252))   # inverse-vol risk weights, signed
+        w = pd.Series({t: sign[t] * invvol[t] for t in on})
+        w = w / w.abs().sum()                            # normalize GROSS to 1
         cov = rets[on].cov() * 252
         pvol = float(np.sqrt(w.values @ cov.values @ w.values))
         scale = min(self.target_vol / pvol, self.max_gross) if pvol > 0 else 1.0
@@ -100,14 +108,19 @@ class VolTargetTSMOM(CrossSectionalStrategy):
 
 
 def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gross=2.0,
-              financing_bps=400):
+              financing_bps=400, long_short=False, borrow_bps=50):
     """Equity curve of the cross-asset trend sleeve. vol_target=True uses the vol-targeted
-    managed-futures construction (may lever to hit target_vol → financing on borrowed cash)."""
+    managed-futures construction (may lever to hit target_vol → financing on borrowed cash).
+    long_short=True shorts down-trending assets (real managed-futures profile → stronger
+    crisis alpha), charging borrow on the short legs."""
     panels = panels or etf_panel()
     if vol_target:
-        strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross)
+        strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross, long_short=long_short)
         return run_xs(panels, strat, cost=costs.proportional(cost_bps), fill="next_open",
-                      leverage=max_gross, financing_bps=financing_bps)
+                      allow_short=long_short, gross_max=max_gross,
+                      leverage=(1.0 if long_short else max_gross),
+                      financing_bps=(0 if long_short else financing_bps),
+                      borrow_bps=(borrow_bps if long_short else 0.0))
     return run_xs(panels, TSMOM(), cost=costs.proportional(cost_bps), fill="next_open")
 
 
