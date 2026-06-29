@@ -411,6 +411,24 @@ def test_leverage_guard_still_blocks_over_cap():
     raise AssertionError("weights summing to 1.7 should exceed leverage 1.5 and raise")
 
 
+# ---------------------------------------------------------------- cash interest
+def test_cash_rate_credits_idle_cash():
+    # A book that never invests stays 100% cash and should compound at the rf rate
+    # (~5% over ~252 trading bars) — the gap that was understating cash-heavy strategies.
+    dates = pd.date_range("2020-01-01", periods=253, freq="D")
+    px = pd.DataFrame({"X": [100.0] * 253}, index=dates)
+    panel = {"Close": px, "Open": px}
+
+    class NeverInvest(CrossSectionalStrategy):
+        def target_weights(self, closes, i):
+            return None
+
+    flat = run_xs(panel, NeverInvest(), fill="next_open")
+    earn = run_xs(panel, NeverInvest(), fill="next_open", cash_rate=0.05)
+    assert abs(flat.iloc[-1] / flat.iloc[0] - 1) < 1e-9            # 0% cash -> unchanged
+    assert 0.048 < (earn.iloc[-1] / earn.iloc[0] - 1) < 0.053      # ~5% earned on idle cash
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

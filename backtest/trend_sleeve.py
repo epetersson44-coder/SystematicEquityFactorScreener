@@ -40,7 +40,10 @@ def etf_panel(tickers=ETFS, refresh=False):
     """{'Close','Open'} (date x ETF) total-return-adjusted, from yfinance, cached."""
     paths = {f: os.path.join(CACHE_DIR, f"trend_{f}.csv") for f in ("Close", "Open")}
     if not refresh and all(os.path.exists(p) for p in paths.values()):
-        return {f: pd.read_csv(p, index_col=0, parse_dates=True) for f, p in paths.items()}
+        cached = {f: pd.read_csv(p, index_col=0, parse_dates=True) for f, p in paths.items()}
+        if set(cached["Close"].columns) == set(tickers):     # cache must match the requested universe
+            return cached                                     # (else fall through & re-fetch — guards
+        #                                                       against the silent-stale-universe bug)
     os.makedirs(CACHE_DIR, exist_ok=True)
     panels = download_panel(tickers, fields=("Close", "Open"), start=TREND_START)
     for f, p in panels.items():
@@ -108,11 +111,12 @@ class VolTargetTSMOM(CrossSectionalStrategy):
 
 
 def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gross=2.0,
-              financing_bps=400, long_short=False, borrow_bps=50):
+              financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0):
     """Equity curve of the cross-asset trend sleeve. vol_target=True uses the vol-targeted
     managed-futures construction (may lever to hit target_vol → financing on borrowed cash).
     long_short=True shorts down-trending assets (real managed-futures profile → stronger
-    crisis alpha), charging borrow on the short legs."""
+    crisis alpha), charging borrow on the short legs. cash_rate credits idle cash with the rf
+    rate (the sleeve parks in cash when assets aren't trending — that cash should earn T-bills)."""
     panels = panels or etf_panel()
     if vol_target:
         strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross, long_short=long_short)
@@ -120,8 +124,9 @@ def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gro
                       allow_short=long_short, gross_max=max_gross,
                       leverage=(1.0 if long_short else max_gross),
                       financing_bps=(0 if long_short else financing_bps),
-                      borrow_bps=(borrow_bps if long_short else 0.0))
-    return run_xs(panels, TSMOM(), cost=costs.proportional(cost_bps), fill="next_open")
+                      borrow_bps=(borrow_bps if long_short else 0.0), cash_rate=cash_rate)
+    return run_xs(panels, TSMOM(), cost=costs.proportional(cost_bps), fill="next_open",
+                  cash_rate=cash_rate)
 
 
 def _ann_stats(eq):
