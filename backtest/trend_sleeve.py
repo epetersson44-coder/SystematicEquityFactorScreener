@@ -28,11 +28,11 @@ from backtest.engine_xs import run_xs
 from backtest.strategy import CrossSectionalStrategy
 from backtest import costs, metrics
 
-# Expanded cross-asset universe (v2): equities (US/dev/EM), rates (long/mid UST), credit
-# (IG/HY), real assets (gold/commodities), FX (dollar). More breadth = more independent trend
-# bets (Grinold). Younger ETFs (HYG/UUP ~2007) are NaN-padded early and simply skipped until
-# they have history.
-ETFS = ["SPY", "EFA", "EEM", "TLT", "IEF", "LQD", "HYG", "GLD", "DBC", "UUP"]
+# Clean cross-asset universe: US + dev-intl equity, long + mid Treasuries, gold, commodities.
+# NOTE (tested 2026-06-28): expanding to 10 (adding EEM/LQD/HYG/UUP) actually HURT the trend
+# sleeve (Sharpe 0.71 -> 0.59) — EM equity, credit, and the dollar trend less cleanly and add
+# noise, not breadth. More instruments is not better here; these 6 are the keepers.
+ETFS = ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]
 TREND_START = "2006-07-01"
 
 
