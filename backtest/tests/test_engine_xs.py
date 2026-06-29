@@ -361,6 +361,32 @@ def test_monte_carlo_invariants():
     assert not bad, f"invariants violated on {len(bad)} universes, e.g. {bad[:5]}"
 
 
+# ---------------------------------------------------------------- stop-loss
+def test_stop_loss_fires_caps_loss_then_misses_rebound():
+    # Entry fills at bar-1 open = 100. Close slides to 75 (-25%) at bar 3 -> a 20% stop sells to
+    # cash; the position is gone, so when the name rebounds to 120 the stopped book misses it —
+    # the classic "sell the bottom" failure made concrete.
+    dates = pd.date_range("2020-01-01", periods=6, freq="D")
+    opens = pd.DataFrame({"X": [100, 100, 90, 78, 82, 100]}, index=dates)
+    closes = pd.DataFrame({"X": [100, 100, 90, 75, 85, 120]}, index=dates)
+    panel = {"Close": closes, "Open": opens}
+    no_stop = run_xs(panel, FixedWeights({"X": 1.0}), fill="next_open")
+    stop = run_xs(panel, FixedWeights({"X": 1.0}), fill="next_open", stop_loss=0.20)
+    assert np.isclose(stop.iloc[3], stop.iloc[-1])          # liquidated to cash at bar 3, then flat
+    assert stop.iloc[-1] < no_stop.iloc[-1] - 1e-6          # missed the rebound -> ends worse
+
+
+def test_stop_loss_not_triggered_when_dip_is_shallow():
+    # A dip shallower than the stop (-15% vs a 20% stop) -> never sold -> identical to no-stop.
+    dates = pd.date_range("2020-01-01", periods=5, freq="D")
+    opens = pd.DataFrame({"X": [100, 100, 95, 90, 100]}, index=dates)
+    closes = pd.DataFrame({"X": [100, 100, 95, 85, 110]}, index=dates)
+    panel = {"Close": closes, "Open": opens}
+    a = run_xs(panel, FixedWeights({"X": 1.0}), fill="next_open")
+    b = run_xs(panel, FixedWeights({"X": 1.0}), fill="next_open", stop_loss=0.20)
+    assert np.allclose(a.values, b.values)
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

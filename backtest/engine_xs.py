@@ -34,6 +34,7 @@ class MultiPortfolio:
         # gross cap only bites in short mode; default 2.0 there (dollar-neutral), 1.0 long-only
         self.gross_max = gross_max if gross_max is not None else (2.0 if allow_short else 1.0)
         self._last_px = {}                                 # last finite price seen per name
+        self._entry_px = {}                                # fill price each position was (re)set at
 
     def equity(self, prices):
         """Mark to market: cash + sum(shares * price) over held names (signed). `prices`
@@ -111,13 +112,39 @@ class MultiPortfolio:
             if t in target_shares:
                 self.shares[t] = target_shares[t]
                 self._last_px[t] = p                       # seed carry-forward from the fill price
+                self._entry_px[t] = p                      # stop-loss reference (this fill)
             else:
                 self.shares.pop(t, None)
+                self._entry_px.pop(t, None)
+        return fee
+
+    def apply_stops(self, prices, stop_loss, cost=None):
+        """Daily risk overlay: sell any LONG that has fallen >= `stop_loss` (fraction, e.g.
+        0.20) below its entry/fill price — to CASH, at the current price. Once stopped, the
+        name stays out until the strategy re-buys it at the next rebalance. Long-only (a value
+        book); shorts are left alone. Returns total fee. Models gap-through loosely: the fill
+        is the current price, which on a trigger bar is already at/below the stop level."""
+        if not stop_loss:
+            return 0.0
+        fee = 0.0
+        for t, sh in list(self.shares.items()):
+            if sh <= 0:
+                continue
+            p = prices.get(t, np.nan)
+            entry = self._entry_px.get(t, np.nan)
+            if not (np.isfinite(p) and p > 0 and np.isfinite(entry) and entry > 0):
+                continue
+            if p <= entry * (1.0 - stop_loss):
+                f = cost(-sh, p) if cost else 0.0
+                self.cash += sh * p - f                    # liquidate the position to cash
+                fee += f
+                self.shares.pop(t, None)
+                self._entry_px.pop(t, None)
         return fee
 
 
 def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open",
-           allow_short=False, gross_max=None, borrow_bps=0.0):
+           allow_short=False, gross_max=None, borrow_bps=0.0, stop_loss=None):
     """Walk a price panel bar by bar applying a cross-sectional strategy; return the
     equity curve.
 
@@ -126,6 +153,8 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
     fill: "next_open" (honest, default) or "close" (validation/optimistic).
     allow_short / gross_max: enable long-short and cap gross exposure (see MultiPortfolio).
     borrow_bps: annual borrow cost (basis points) charged daily on short notional.
+    stop_loss: optional fraction (e.g. 0.20). When set, each bar any LONG down >= stop_loss
+        from its entry is sold to cash (checked at the close), held out until the next rebalance.
     """
     closes, opens = panels["Close"], panels["Open"]
     dates = closes.index
@@ -149,6 +178,8 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
                 pf.rebalance(w, closes.iloc[i], cost)
         else:
             raise ValueError(f"unknown fill mode {fill!r}")
+        if stop_loss:
+            pf.apply_stops(closes.iloc[i], stop_loss, cost) # daily stop check at the close
         if daily_borrow:
             pf.accrue_borrow(closes.iloc[i], daily_borrow)  # holding cost on shorts, on today's book
         equity[i] = pf.equity(closes.iloc[i])              # mark at today's close

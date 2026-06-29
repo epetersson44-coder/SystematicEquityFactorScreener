@@ -139,6 +139,27 @@ def _facts_for(ticker):
     return company_facts(cik) if cik else None
 
 
+def _cik_facts(ticker):
+    """(cik, company-facts JSON) for a ticker, or (None, None) if uncovered."""
+    cik = ticker_cik().get(ticker.upper())
+    return (cik, company_facts(cik)) if cik else (None, None)
+
+
+_SERIES_CACHE = {}
+
+
+def _series_for(cik, facts):
+    """{field: {fy_end: (val, filed)}} for ALL fields — the per-ticker annual series, computed
+    once (via _annual) and cached by CIK. The hot path: a backtest re-screens the same names at
+    many as-of dates, and the fundamentals only change at filing dates, so this turns an O(facts)
+    re-parse on every as-of call into a one-time cost + O(1) lookups (hours -> minutes)."""
+    s = _SERIES_CACHE.get(cik)
+    if s is None:
+        s = {f: _annual(facts, f) for f in FIELD_TAGS}
+        _SERIES_CACHE[cik] = s
+    return s
+
+
 _SIC = {}
 
 
@@ -275,12 +296,12 @@ def _annual_revenue(facts):
     return out
 
 
-def _extract(facts, asof):
+def _extract(series, asof):
     """Point-in-time annual extraction: for every field, the current-FY and prior-FY value
     KNOWN as of `asof`, plus newest-first revenue/gross-profit histories. Anchored on net
-    income's fiscal-year-ends (filed on/before asof). Returns None if <2 annual years filed."""
+    income's fiscal-year-ends (filed on/before asof). `series` is the per-ticker annual series
+    (see _series_for). Returns None if <2 annual years filed."""
     asof = str(asof)
-    series = {f: _annual(facts, f) for f in FIELD_TAGS}
     ends = sorted(e for e, (v, filed) in series["net_income"].items() if filed <= asof)
     if len(ends) < 2:
         return None
@@ -304,10 +325,10 @@ def fundamentals_asof(ticker, asof):
     """Raw point-in-time line items KNOWN as of `asof` (current + prior fiscal year), flattened
     to {field, field_prior, fy_end}. The low-level primitive; for factor work use
     edgar_fundamentals_asof (canonical) / edgar_fscore_asof. None if uncovered / <2 years."""
-    facts = _facts_for(ticker)
+    cik, facts = _cik_facts(ticker)
     if facts is None:
         return None
-    e = _extract(facts, asof)
+    e = _extract(_series_for(cik, facts), asof)
     if e is None:
         return None
     out = {"ticker": ticker.upper(), "fy_end": e["fy_end"]}
@@ -333,7 +354,7 @@ def edgar_fundamentals_asof(ticker, asof, price=None):
     facts = company_facts(cik)
     if facts is None:
         return None
-    e = _extract(facts, asof)
+    e = _extract(_series_for(cik, facts), asof)
     if e is None:
         return None
     c, p = e["cur"], e["prior"]
@@ -434,10 +455,10 @@ def _fscore(c, p):
 def edgar_fscore_asof(ticker, asof):
     """Piotroski F-Score (0-9) as of `asof` from EDGAR — point-in-time, survivorship-free.
     Parallel to fundamentals.piotroski_fscore_asof (SimFin). None if uncovered / incomplete."""
-    facts = _facts_for(ticker)
+    cik, facts = _cik_facts(ticker)
     if facts is None:
         return None
-    e = _extract(facts, asof)
+    e = _extract(_series_for(cik, facts), asof)
     if e is None:
         return None
     return _fscore(e["cur"], e["prior"])

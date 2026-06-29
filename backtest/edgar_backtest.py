@@ -126,6 +126,53 @@ def run_edgar_backtest(top_n=20, end="2025-09-01", freq="QS", cost_bps=30, secto
     return factor_eq, uni_eq, spy, stats
 
 
+def _run_top(schedule, engine_panel, cost_bps, stop_loss=None):
+    """Run a top-N pick schedule through the engine (adjusted prices = total return), with an
+    optional daily stop-loss. Returns the equity curve from the first lock."""
+    from backtest.engine_xs import run_xs
+    from backtest.factor_backtest import ScheduledWeights
+    held = sorted({t for w in schedule.values() for t in w.index})
+    sub = {"Close": engine_panel["Close"][held], "Open": engine_panel["Open"][held]}
+    eq = run_xs(sub, ScheduledWeights(schedule), cost=costs.proportional(cost_bps),
+                fill="next_open", stop_loss=stop_loss)
+    return eq[eq.index >= min(schedule)]
+
+
+def _rebase(curve, start, base=10_000.0):
+    c = curve[curve.index >= start].dropna()
+    return base * c / c.iloc[0]
+
+
+def compare_configs(top_n=20, end="2025-09-01", cost_bps=30, stop=0.20, tickers=None, tag="sp600"):
+    """The 4-way visual experiment (all on EDGAR fundamentals, full cycle):
+      1. screener, BIWEEKLY rebalance + `stop`% daily stop-loss
+      2. screener, BIWEEKLY rebalance, NO stop
+      3. screener, MONTHLY rebalance, normal (NO stop)
+      4. SPY
+    Isolates the stop-loss effect (1 vs 2), the rebalance-frequency effect (2 vs 3), and the
+    benchmark (4). All rebased to $10k at a common start. Returns {label: equity_curve}."""
+    if tickers is None:
+        tickers = sp600_tickers()
+    panels = price_panels(tickers, tag=tag)
+    engine_panel = {"Close": panels["adj_close"], "Open": panels["adj_open"]}
+    print("[compare] building biweekly schedule...")
+    biw_top, _ = build_schedules(panels, top_n, end, freq="2W", sector_neutral=True)
+    print("[compare] building monthly schedule...")
+    mon_top, _ = build_schedules(panels, top_n, end, freq="MS", sector_neutral=True)
+
+    raw = {
+        f"biweekly + {int(stop * 100)}% stop": _run_top(biw_top, engine_panel, cost_bps, stop_loss=stop),
+        "biweekly (no stop)": _run_top(biw_top, engine_panel, cost_bps),
+        "monthly (normal)": _run_top(mon_top, engine_panel, cost_bps),
+    }
+    start = max(c.index[0] for c in raw.values())            # common start for a fair rebase
+    stop_end = min(c.index[-1] for c in raw.values())
+    curves = {k: _rebase(v, start) for k, v in raw.items()}
+    spy = _spy_curve(pd.date_range(start, stop_end, freq="D"))
+    curves["SPY"] = _rebase(spy, start)
+    return curves
+
+
 FCOLS = ["ev_ebit", "price_fcf", "roic", "gm_stability", "net_debt_ebitda", "fscore"]
 
 
