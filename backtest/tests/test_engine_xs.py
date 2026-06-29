@@ -387,6 +387,30 @@ def test_stop_loss_not_triggered_when_dip_is_shallow():
     assert np.allclose(a.values, b.values)
 
 
+# ---------------------------------------------------------------- leverage
+def test_leverage_amplifies_return_and_guard_allows_it():
+    # 1.5x leverage on a +10%/bar riser gains ~1.5x the unlevered return (minus a tiny
+    # financing drag), and the long-only guard now admits weights summing up to `leverage`.
+    dates = pd.date_range("2020-01-01", periods=5, freq="D")
+    px = pd.DataFrame({"X": [100, 110, 121, 133.1, 146.41]}, index=dates)
+    panel = {"Close": px, "Open": px}
+    r1 = run_xs(panel, FixedWeights({"X": 1.0}), fill="close").iloc[-1] / 10_000 - 1
+    r15 = run_xs(panel, FixedWeights({"X": 1.5}), fill="close",
+                 leverage=1.5, financing_bps=500).iloc[-1] / 10_000 - 1
+    assert 1.45 * r1 < r15 <= 1.5 * r1 + 1e-6
+
+
+def test_leverage_guard_still_blocks_over_cap():
+    dates = pd.date_range("2020-01-01", periods=5, freq="D")
+    px = pd.DataFrame({"X": [100, 101, 102, 103, 104], "Y": [50, 50, 51, 51, 52]}, index=dates)
+    panel = {"Close": px, "Open": px}
+    try:
+        run_xs(panel, FixedWeights({"X": 1.0, "Y": 0.7}), fill="close", leverage=1.5)
+    except ValueError:
+        return
+    raise AssertionError("weights summing to 1.7 should exceed leverage 1.5 and raise")
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

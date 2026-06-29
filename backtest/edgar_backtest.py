@@ -126,16 +126,18 @@ def run_edgar_backtest(top_n=20, end="2025-09-01", freq="QS", cost_bps=30, secto
     return factor_eq, uni_eq, spy, stats
 
 
-def _run_top(schedule, engine_panel, cost_bps, stop_loss=None):
+def _run_top(schedule, engine_panel, cost_bps, stop_loss=None, leverage=1.0, financing_bps=0.0):
     """Run a top-N pick schedule through the engine (adjusted prices = total return), with an
-    optional daily stop-loss. Returns the equity curve from the first lock."""
+    optional daily stop-loss and optional leverage (weights scaled by `leverage`, financing
+    charged on the borrowed cash). Returns the equity curve from the first lock."""
     from backtest.engine_xs import run_xs
     from backtest.factor_backtest import ScheduledWeights
-    held = sorted({t for w in schedule.values() for t in w.index})
+    sched = {d: (w * leverage) for d, w in schedule.items()} if leverage != 1.0 else schedule
+    held = sorted({t for w in sched.values() for t in w.index})
     sub = {"Close": engine_panel["Close"][held], "Open": engine_panel["Open"][held]}
-    eq = run_xs(sub, ScheduledWeights(schedule), cost=costs.proportional(cost_bps),
-                fill="next_open", stop_loss=stop_loss)
-    return eq[eq.index >= min(schedule)]
+    eq = run_xs(sub, ScheduledWeights(sched), cost=costs.proportional(cost_bps), fill="next_open",
+                stop_loss=stop_loss, leverage=leverage, financing_bps=financing_bps)
+    return eq[eq.index >= min(sched)]
 
 
 def _rebase(curve, start, base=10_000.0):
@@ -170,6 +172,68 @@ def compare_configs(top_n=20, end="2025-09-01", cost_bps=30, stop=0.20, tickers=
     curves = {k: _rebase(v, start) for k, v in raw.items()}
     spy = _spy_curve(pd.date_range(start, stop_end, freq="D"))
     curves["SPY"] = _rebase(spy, start)
+    return curves
+
+
+def momentum_schedule(adj_close, top_n=20, end="2025-09-01", freq="MS"):
+    """12-1 cross-sectional momentum (skip ~1mo, look back ~12mo), monthly top-N equal weight,
+    with the 200-day SPY TREND FILTER: when SPY < its 200d MA at the rebalance, go to CASH (an
+    empty target). The crash-guarded long-only momentum book — the lab's best-Sharpe piece."""
+    from backtest.data import get_prices
+    spy = get_prices("SPY")["Close"]
+    spy_ma = spy.rolling(200).mean()
+    dates = adj_close.index
+    SKIP, LOOK = 21, 252
+    sched = {}
+    for tgt in pd.date_range(START, end, freq=freq):
+        if tgt > dates[-1]:
+            break
+        d = dates[dates.searchsorted(tgt)]
+        i = dates.get_loc(d)
+        if i - SKIP - LOOK < 0:
+            continue
+        sp, ma = spy[spy.index <= d], spy_ma[spy_ma.index <= d]
+        if len(sp) and len(ma) and np.isfinite(ma.iloc[-1]) and sp.iloc[-1] < ma.iloc[-1]:
+            sched[d] = pd.Series(dtype=float)            # risk-off -> all cash
+            continue
+        mom = (adj_close.iloc[i - SKIP] / adj_close.iloc[i - SKIP - LOOK] - 1).dropna()
+        px = adj_close.loc[d]
+        elig = [t for t in mom.index if np.isfinite(px.get(t, np.nan)) and px.get(t, 0) > 0]
+        top = mom[elig].sort_values(ascending=False).head(top_n).index
+        if len(top):
+            sched[d] = pd.Series(1.0 / len(top), index=list(top))
+    return sched
+
+
+def compare_aggressive(top_n=20, end="2025-09-01", cost_bps=30, lev=1.5, fin_bps=500,
+                       stop=0.20, tickers=None, tag="sp600"):
+    """The 'wrong way vs right way to add risk' experiment, all vs SPY:
+      1. screener +overlay = monthly screener, LEVERED `lev`x + `stop` stop-loss
+                             (tricks on a low-Sharpe book = the wrong way)
+      2. momentum `lev`x   = the crash-guarded momentum book (best Sharpe), LEVERED `lev`x
+                             (lever your best ratio = the right way)
+      3. screener (plain)  = the monthly screener, unlevered (baseline)
+      4. SPY
+    Levered books pay `fin_bps` annual financing on borrowed cash. Rebased to $10k at a
+    common start. Returns {label: equity_curve}."""
+    if tickers is None:
+        tickers = sp600_tickers()
+    panels = price_panels(tickers, tag=tag)
+    ep = {"Close": panels["adj_close"], "Open": panels["adj_open"]}
+    print("[aggr] building screener monthly schedule...")
+    mon_top, _ = build_schedules(panels, top_n, end, freq="MS", sector_neutral=True)
+    print("[aggr] building momentum schedule...")
+    mom = momentum_schedule(panels["adj_close"], top_n, end)
+    raw = {
+        f"screener +overlay ({lev:g}x+stop)": _run_top(mon_top, ep, cost_bps, stop_loss=stop,
+                                                       leverage=lev, financing_bps=fin_bps),
+        f"momentum {lev:g}x (guarded)": _run_top(mom, ep, cost_bps, leverage=lev, financing_bps=fin_bps),
+        "screener (plain monthly)": _run_top(mon_top, ep, cost_bps),
+    }
+    start = max(c.index[0] for c in raw.values())
+    end_d = min(c.index[-1] for c in raw.values())
+    curves = {k: _rebase(v, start) for k, v in raw.items()}
+    curves["SPY"] = _rebase(_spy_curve(pd.date_range(start, end_d, freq="D")), start)
     return curves
 
 

@@ -80,8 +80,8 @@ class MultiPortfolio:
             if (target_weights < 0).any():
                 raise ValueError("negative target weight (long-only book — pass allow_short=True to short)")
             total = float(target_weights.sum())
-            if total > 1.0 + 1e-9:
-                raise ValueError(f"target weights sum to {total:.4f} > 1 (no leverage)")
+            if total > self.gross_max + 1e-9:
+                raise ValueError(f"target weights sum to {total:.4f} > {self.gross_max} (over-leveraged)")
         else:
             gross = float(target_weights.abs().sum())
             if gross > self.gross_max + 1e-9:
@@ -144,7 +144,8 @@ class MultiPortfolio:
 
 
 def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open",
-           allow_short=False, gross_max=None, borrow_bps=0.0, stop_loss=None):
+           allow_short=False, gross_max=None, borrow_bps=0.0, stop_loss=None,
+           leverage=1.0, financing_bps=0.0):
     """Walk a price panel bar by bar applying a cross-sectional strategy; return the
     equity curve.
 
@@ -155,12 +156,17 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
     borrow_bps: annual borrow cost (basis points) charged daily on short notional.
     stop_loss: optional fraction (e.g. 0.20). When set, each bar any LONG down >= stop_loss
         from its entry is sold to cash (checked at the close), held out until the next rebalance.
+    leverage: long-only gross cap (>1 borrows to buy more than equity). The strategy must emit
+        weights summing to <= leverage. financing_bps: annual interest (bps) on borrowed cash
+        (charged daily on negative cash) — leverage isn't free.
     """
     closes, opens = panels["Close"], panels["Open"]
     dates = closes.index
     n = len(dates)
-    pf = MultiPortfolio(initial_capital, allow_short=allow_short, gross_max=gross_max)
+    eff_gross = gross_max if gross_max is not None else (leverage if not allow_short else None)
+    pf = MultiPortfolio(initial_capital, allow_short=allow_short, gross_max=eff_gross)
     daily_borrow = (borrow_bps / 10_000.0) / TRADING_DAYS if borrow_bps else 0.0
+    daily_fin = (financing_bps / 10_000.0) / TRADING_DAYS if financing_bps else 0.0
     equity = np.empty(n)
     pending = None
 
@@ -182,6 +188,8 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
             pf.apply_stops(closes.iloc[i], stop_loss, cost) # daily stop check at the close
         if daily_borrow:
             pf.accrue_borrow(closes.iloc[i], daily_borrow)  # holding cost on shorts, on today's book
+        if daily_fin and pf.cash < 0:
+            pf.cash += pf.cash * daily_fin                  # interest on borrowed cash (cash < 0)
         equity[i] = pf.equity(closes.iloc[i])              # mark at today's close
 
     return pd.Series(equity, index=dates, name="equity")
