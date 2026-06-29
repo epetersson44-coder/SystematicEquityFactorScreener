@@ -28,8 +28,12 @@ from backtest.engine_xs import run_xs
 from backtest.strategy import CrossSectionalStrategy
 from backtest import costs, metrics
 
-ETFS = ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]    # US eq, intl eq, long UST, mid UST, gold, commodities
-TREND_START = "2006-07-01"                            # earliest all 6 ETFs have data (DBC ~Feb 2006)
+# Expanded cross-asset universe (v2): equities (US/dev/EM), rates (long/mid UST), credit
+# (IG/HY), real assets (gold/commodities), FX (dollar). More breadth = more independent trend
+# bets (Grinold). Younger ETFs (HYG/UUP ~2007) are NaN-padded early and simply skipped until
+# they have history.
+ETFS = ["SPY", "EFA", "EEM", "TLT", "IEF", "LQD", "HYG", "GLD", "DBC", "UUP"]
+TREND_START = "2006-07-01"
 
 
 def etf_panel(tickers=ETFS, refresh=False):
@@ -63,9 +67,47 @@ class TSMOM(CrossSectionalStrategy):
         return pd.Series(w, dtype=float)             # empty Series -> all cash (sells everything)
 
 
-def run_trend(cost_bps=5, panels=None):
-    """Equity curve of the cross-asset trend sleeve (cheap ETF costs)."""
+class VolTargetTSMOM(CrossSectionalStrategy):
+    """Vol-targeted cross-asset trend (the standard managed-futures construction). Monthly: hold
+    instruments with positive 12-month momentum, weight them INVERSE to recent volatility (equal
+    risk per bet = risk parity among the 'on' set), then scale the whole sleeve to a TARGET
+    annualized portfolio vol (estimated from the recent covariance), capped at `max_gross`. So
+    the sleeve runs hot when many uncorrelated trends are calm and dials down when vol spikes or
+    trends roll over — the mechanism behind trend's smooth risk profile."""
+    def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=2.0):
+        self.look, self.vol_lb, self.target_vol, self.every, self.max_gross = (
+            look, vol_lb, target_vol, every, max_gross)
+
+    def target_weights(self, closes, i):
+        if i < self.look or i % self.every != 0:
+            return None
+        rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
+        on = []
+        for t in closes.columns:
+            p0, pm = closes.iloc[i].get(t), closes.iloc[i - self.look].get(t)
+            v = rets[t].std() if t in rets else np.nan
+            if (p0 and pm and np.isfinite(p0) and np.isfinite(pm) and (p0 / pm - 1) > 0
+                    and np.isfinite(v) and v > 0):
+                on.append(t)
+        if not on:
+            return pd.Series(dtype=float)                # all cash
+        w = 1.0 / (rets[on].std() * np.sqrt(252))        # inverse-vol risk weights
+        w = w / w.sum()
+        cov = rets[on].cov() * 252
+        pvol = float(np.sqrt(w.values @ cov.values @ w.values))
+        scale = min(self.target_vol / pvol, self.max_gross) if pvol > 0 else 1.0
+        return w * scale
+
+
+def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gross=2.0,
+              financing_bps=400):
+    """Equity curve of the cross-asset trend sleeve. vol_target=True uses the vol-targeted
+    managed-futures construction (may lever to hit target_vol → financing on borrowed cash)."""
     panels = panels or etf_panel()
+    if vol_target:
+        strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross)
+        return run_xs(panels, strat, cost=costs.proportional(cost_bps), fill="next_open",
+                      leverage=max_gross, financing_bps=financing_bps)
     return run_xs(panels, TSMOM(), cost=costs.proportional(cost_bps), fill="next_open")
 
 
@@ -104,6 +146,20 @@ def analyze(cost_bps=5, start=None):
         st, eq = blend(ws)
         stats[name] = {**st, "w": {k: round(v, 2) for k, v in ws.items()}}
         curves[name] = 10_000 * eq / eq.iloc[0]
+
+    # #1: lever the best-Sharpe blend (risk-parity) up to SPY's volatility — the apples-to-apples
+    # "same risk, whose return wins?" test. Financing (~4%/yr) charged on the borrowed cash.
+    rp = blends["risk-parity SPY+trend"]
+    rp_ret = sum(w * rets[c] for c, w in rp.items())
+    spy_vol, rp_vol = rets["SPY"].std() * np.sqrt(252), rp_ret.std() * np.sqrt(252)
+    L = spy_vol / rp_vol if rp_vol > 0 else 1.0
+    lev_ret = L * rp_ret - (L - 1) * (400 / 10_000) / 252
+    lev_eq = (1 + lev_ret).cumprod()
+    label = f"risk-parity LEVERED {L:.1f}x (=SPY vol)"
+    stats[label] = {**_ann_stats(lev_eq), "w": {"blend": round(L, 2)}}
+    curves[label] = 10_000 * lev_eq / lev_eq.iloc[0]
+
     stats["_corr_trend_spy"] = round(corr, 2)
     stats["_window"] = (str(df.index[0].date()), str(df.index[-1].date()))
+    stats["_levered_label"] = label
     return stats, curves
