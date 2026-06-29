@@ -130,6 +130,70 @@ def _facts_for(ticker):
     return company_facts(cik) if cik else None
 
 
+_SIC = {}
+
+
+def company_sic(cik):
+    """The 4-digit SIC industry code (str) for a CIK, from the SEC SUBMISSIONS endpoint
+    (companyfacts has no SIC). Cached to disk in one small {cik: sic} map. '' if unknown."""
+    path = os.path.join(EDGAR_DIR, "sic.json")
+    if not _SIC and os.path.exists(path):
+        _SIC.update(json.load(open(path)))
+    if cik in _SIC:
+        return _SIC[cik]
+    try:
+        sub = _get(f"https://data.sec.gov/submissions/CIK{cik}.json")
+        sic = str(sub.get("sic") or "")
+    except requests.HTTPError:
+        sic = ""
+    _SIC[cik] = sic
+    os.makedirs(EDGAR_DIR, exist_ok=True)
+    json.dump(_SIC, open(path, "w"))
+    return sic
+
+
+def _sic_to_sector(sic):
+    """Coarse SIC -> sector label. Names match the SimFin/yfinance sectors the screen already
+    keys on, so screen.EXCLUDE_SECTORS ('Financial Services'/'Real Estate') filters correctly —
+    that exclusion is the load-bearing part and is checked FIRST. The rest is granular enough
+    to give a stable grouping for sector-neutral ranking, not a GICS-exact mapping. Unmapped /
+    unknown SICs return None (dropped under sector-neutral rather than spuriously top-ranked)."""
+    try:
+        s = int(sic)
+    except (TypeError, ValueError):
+        return None
+    if 6500 <= s <= 6599 or s == 6798:                               # real estate, REITs
+        return "Real Estate"
+    if 6000 <= s <= 6799:                                            # banks, insurers, funds
+        return "Financial Services"
+    if 1300 <= s <= 1399 or 2900 <= s <= 2999 or 4922 <= s <= 4925:  # oil & gas, refining, gas
+        return "Energy"
+    if 4900 <= s <= 4991:                                            # utilities
+        return "Utilities"
+    if (3570 <= s <= 3579 or 3670 <= s <= 3679 or 3660 <= s <= 3669
+            or 3820 <= s <= 3829 or 7370 <= s <= 7379):              # computers, semis, software
+        return "Technology"
+    if 2833 <= s <= 2836 or 3840 <= s <= 3851 or s == 3826 or 8000 <= s <= 8099:  # pharma, devices, health svc
+        return "Health Care"
+    if 2700 <= s <= 2799 or 4800 <= s <= 4899 or 7800 <= s <= 7841:  # publishing, telecom, media
+        return "Communication Services"
+    if (100 <= s <= 999 or 2000 <= s <= 2199 or 5400 <= s <= 5499    # agriculture, food/bev/tobacco, grocery
+            or s == 5912):                                          # drug stores
+        return "Consumer Defensive"
+    if (1000 <= s <= 1299 or 1400 <= s <= 1499 or 2400 <= s <= 2499
+            or 2600 <= s <= 2899 or 3300 <= s <= 3399):              # mining, paper, chemicals, metals
+        return "Basic Materials"
+    if (2300 <= s <= 2399 or 2500 <= s <= 2599 or 3000 <= s <= 3199 or 3710 <= s <= 3716
+            or 5000 <= s <= 5999 or 7000 <= s <= 7299 or 7500 <= s <= 7699
+            or 7900 <= s <= 7999 or 8100 <= s <= 8399):              # apparel, autos, retail, repair, leisure
+        return "Consumer Cyclical"
+    if (1500 <= s <= 1799 or 3400 <= s <= 3569 or 3580 <= s <= 3659 or 3680 <= s <= 3699
+            or 3720 <= s <= 3799 or 4000 <= s <= 4799 or 7300 <= s <= 7369
+            or 8700 <= s <= 8744):                                   # machinery, aero/defense, transport, svcs
+        return "Industrials"
+    return None
+
+
 def _span_days(start, end):
     """Calendar days from start to end ('YYYY-MM-DD' strings), or None if unparseable."""
     try:
@@ -250,10 +314,14 @@ def edgar_fundamentals_asof(ticker, asof, price=None):
     roic, gm_stability, net_debt_ebitda, altman_z) consume this directly. market_cap = `price`
     x diluted shares when a price is supplied (the backtest passes the as-of close), else None
     — which leaves the price-dependent factors (ev_ebit, price_fcf, altman_z) None until then.
-    sector is left None (EDGAR carries SIC, not GICS); wire a SIC->sector map in increment 3.
-    Beneish inputs are partial (receivables/PPE/SGA not pulled yet) so beneish_m returns None
-    for now. Returns None if uncovered / <2 annual years filed as of the date."""
-    facts = _facts_for(ticker)
+    sector is mapped from the filer's SIC code (for the financials/REIT exclusion + sector-
+    neutral ranking). Beneish inputs are partial (receivables/PPE/SGA not pulled yet) so
+    beneish_m returns None for now. Returns None if uncovered / <2 annual years filed as of
+    the date."""
+    cik = ticker_cik().get(ticker.upper())
+    if not cik:
+        return None
+    facts = company_facts(cik)
     if facts is None:
         return None
     e = _extract(facts, asof)
@@ -284,7 +352,7 @@ def edgar_fundamentals_asof(ticker, asof, price=None):
 
     return {
         "ticker": ticker.upper(),
-        "sector": None,
+        "sector": _sic_to_sector(company_sic(cik)),
         "report_date": e["fy_end"],
         "market_cap": market_cap,
         "enterprise_value": ev,

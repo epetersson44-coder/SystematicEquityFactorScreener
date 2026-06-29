@@ -413,8 +413,12 @@ def _piotroski(inc_t, inc_p, bal_t, bal_p, cf_t):
     return int(s)
 
 
-def piotroski_fscore_asof(ticker, asof):
-    """Piotroski F-Score (0-9) as of `asof` — point-in-time (for backtests)."""
+def piotroski_fscore_asof(ticker, asof, source="simfin"):
+    """Piotroski F-Score (0-9) as of `asof` — point-in-time (for backtests). source 'simfin'
+    (default) or 'edgar' (survivorship-free, ~2010+)."""
+    if source == "edgar":
+        from edgar import edgar_fscore_asof
+        return edgar_fscore_asof(ticker, asof)
     d = _simfin_load()
     inc_t, inc_p = _two_from(_rows_asof(d["income"], ticker, asof))
     bal_t, bal_p = _two_from(_rows_asof(d["balance"], ticker, asof))
@@ -465,11 +469,16 @@ def get_fundamentals(ticker, source="yfinance"):
     return _normalize(_SOURCES[source](ticker))
 
 
-def get_fundamentals_asof(ticker, asof, price=None):
-    """Point-in-time canonical fundamentals as of `asof` (SimFin only) — contract-
-    enforced, look-ahead-free (statements published after `asof` are invisible). Pass
-    `price` (the as-of close) to get a point-in-time market_cap. The historical-backtest
-    counterpart to get_fundamentals()."""
+def get_fundamentals_asof(ticker, asof, price=None, source="simfin"):
+    """Point-in-time canonical fundamentals as of `asof` — contract-enforced, look-ahead-free
+    (statements published after `asof` are invisible). Pass `price` (the as-of close) to get a
+    point-in-time market_cap. The historical-backtest counterpart to get_fundamentals().
+    source: 'simfin' (free, ~FY2020+) or 'edgar' (raw SEC, survivorship-free, ~2009-10+). A
+    router, not a blender: pick ONE source per backtest — never mix vintages across time."""
+    if source == "edgar":
+        from edgar import edgar_fundamentals_asof              # lazy: avoid edgar<->factors import cycle
+        raw = edgar_fundamentals_asof(ticker, asof, price)
+        return _normalize(raw if raw is not None else _blank(ticker))
     return _normalize(simfin_fundamentals_asof(ticker, asof, price))
 
 
