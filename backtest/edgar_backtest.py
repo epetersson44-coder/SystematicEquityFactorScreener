@@ -24,6 +24,7 @@
 import os
 from io import StringIO
 
+import numpy as np
 import pandas as pd
 import requests
 import yfinance as yf
@@ -123,6 +124,65 @@ def run_edgar_backtest(top_n=20, end="2025-09-01", freq="QS", cost_bps=30, secto
              "n_rebalances": len(top_sched),
              "start": factor_eq.index[0].date(), "end": factor_eq.index[-1].date()}
     return factor_eq, uni_eq, spy, stats
+
+
+FCOLS = ["ev_ebit", "price_fcf", "roic", "gm_stability", "net_debt_ebitda", "fscore"]
+
+
+def decompose_drag(end="2025-09-01", freq="QS", tickers=None, tag="sp600"):
+    """WHICH factor makes the composite anti-predictive? Per-factor Information Coefficient over
+    the full EDGAR cycle: at each rebalance, take each factor's sector-neutral GOOD-direction
+    percentile (exactly how the screen ranks — the {factor}_pct columns from screen_asof) and
+    rank-correlate it with the cross-sectional forward return to the next rebalance. Positive
+    mean IC => the factor predicts; ~0 => dead; NEGATIVE => it drags. Also reports the COMPOSITE's
+    own IC and a raw 12-1 MOMENTUM positive-control (the known real edge) for contrast. Returns
+    (ic_table, obs). IC is whole-cross-section, so it's free of the top-20 concentration noise."""
+    if tickers is None:
+        tickers = sp600_tickers()
+    panels = price_panels(tickers, tag=tag)
+    adj, raw = panels["adj_close"], panels["raw_close"]
+    dates = adj.index
+    universe = list(adj.columns)
+    rb = [dates[dates.searchsorted(t)] for t in pd.date_range(START, end, freq=freq) if t <= dates[-1]]
+    SKIP, LOOK = 21, 252                                  # 12-1 momentum (skip ~1mo, look back ~12mo)
+    recs = []
+    for k in range(len(rb) - 1):
+        d, d1 = rb[k], rb[k + 1]
+        ranked = screen_asof(d, raw.loc[d] if d in raw.index else pd.Series(dtype=float),
+                             universe, sector_neutral=True, source="edgar")
+        if ranked.empty:
+            continue
+        seg = adj[(adj.index > d) & (adj.index <= d1)]
+        c0, c1 = adj.loc[d], adj.loc[d1]
+        i = dates.get_loc(d)
+        mom = (adj.iloc[i - SKIP] / adj.iloc[i - SKIP - LOOK] - 1) if i - SKIP - LOOK >= 0 else None
+        for _, r in ranked.iterrows():
+            t = r["ticker"]
+            p0, p1 = c0.get(t), c1.get(t)
+            if not (p0 is not None and np.isfinite(p0) and p0 > 0):
+                continue
+            if not (p1 is not None and np.isfinite(p1)):     # delisted mid-quarter -> last trade
+                s = seg[t].dropna()
+                p1 = float(s.iloc[-1]) if len(s) else np.nan
+            if not (np.isfinite(p1) and p1 > 0):
+                continue
+            rec = {"date": d, "fwd": p1 / p0 - 1, "composite": r.get("composite")}
+            for f in FCOLS:
+                rec[f] = r.get(f + "_pct")                # sector-neutral good-direction pct
+            rec["momentum"] = float(mom[t]) if (mom is not None and t in mom.index
+                                                and np.isfinite(mom.get(t, np.nan))) else np.nan
+            recs.append(rec)
+    obs = pd.DataFrame(recs)
+    obs["fwd_rank"] = obs.groupby("date")["fwd"].rank(pct=True)
+    rows = {}
+    big = obs.groupby("date").size()                      # skip near-empty early periods (degenerate corr)
+    obs = obs[obs["date"].isin(big[big >= 5].index)]
+    for f in FCOLS + ["composite", "momentum"]:
+        ics = obs.groupby("date").apply(lambda g: g[f].corr(g["fwd_rank"]), include_groups=False).dropna()
+        m, sd = ics.mean(), ics.std()
+        rows[f] = {"IC": round(m, 4), "t_stat": round(m / sd * np.sqrt(len(ics)), 2) if sd else np.nan,
+                   "hit_rate": round(float((ics > 0).mean()), 2), "periods": len(ics)}
+    return pd.DataFrame(rows).T, obs
 
 
 if __name__ == "__main__":
