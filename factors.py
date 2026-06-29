@@ -54,6 +54,17 @@ def get_gm_stability(f):
     return float(np.std(margins, ddof=1)) if len(margins) >= 2 else None
 
 
+def get_gross_profitability(f):
+    """Novy-Marx gross profitability = gross profit / total assets. Higher is better. The
+    best-evidenced quality signal in the replication literature (gross profit is less
+    contaminated by accruals/depreciation than net income); a GROWTH-leaning quality measure
+    that hedges value. Under test (Step 3) — not yet in the production composite."""
+    gp, ta = f.get("gross_profit"), f.get("total_assets")
+    if gp is not None and ta and ta > 0:
+        return gp / ta
+    return None
+
+
 def get_net_debt_ebitda(f):
     total_debt, cash, ebitda = f.get("total_debt"), f.get("cash"), f.get("ebitda")
     # Missing data must stay missing — defaulting debt to 0 made data gaps score as
