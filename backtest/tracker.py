@@ -130,8 +130,39 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
     return weights, prices, asof
 
 
-PICKERS = {"momentum": momentum_picks, "factor": factor_picks, "factor_ls": factor_ls_picks}
+def blend_picks(refresh=False, eq_weight=None):
+    """Today's UNLEVERAGED SPY + cross-asset-trend blend, as net ETF weights: (weights, prices, asof).
+
+    The project's headline result (trend_sleeve.py, Sharpe ~0.90, maxDD −18% over 2006-2026 vs
+    SPY 0.64/−55%): the SPY equity leg + the vol-targeted 6-ETF trend sleeve (SPY/EFA/TLT/IEF/
+    GLD/DBC), combined risk-parity (inverse-vol). Long-only, NO borrowing; any unallocated weight
+    is cash. A real 6-ETF monthly allocation you could run in a brokerage account — this is the
+    one book worth tracking live (the factor screener was a proven zero-edge result). Benched vs
+    SPY. The risk-parity equity/trend split is recomputed from full-history vols each lock."""
+    from backtest.trend_sleeve import etf_panel, run_trend, VolTargetTSMOM
+    closes = etf_panel(refresh=refresh)["Close"]
+    i = len(closes) - 1
+    asof = closes.index[i].date().isoformat()
+    if eq_weight is None:                                   # inverse-vol risk parity: SPY vs trend sleeve
+        al = pd.DataFrame({"SPY": closes["SPY"], "trend": run_trend(cash_rate=0.0)}).dropna()
+        al = al.pct_change().dropna()
+        ivs, ivt = 1.0 / al["SPY"].std(), 1.0 / al["trend"].std()
+        eq_weight = ivs / (ivs + ivt)
+    tw = VolTargetTSMOM(max_gross=1.0, every=1).target_weights(closes, i)
+    tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
+    net = pd.Series({"SPY": eq_weight}).add((1.0 - eq_weight) * tw, fill_value=0.0)
+    net = net[net.abs() > 1e-9]
+    return net, closes.iloc[i].reindex(net.index), asof
+
+
+# Live books. momentum (real, crash-guarded edge) and blend (the headline Sharpe-0.90 trend
+# allocation) are the keepers tracked monthly; factor/factor_ls stay defined so their existing
+# locks still report, but are no longer locked forward (the screener was a proven zero-edge result).
+PICKERS = {"momentum": momentum_picks, "blend": blend_picks,
+           "factor": factor_picks, "factor_ls": factor_ls_picks}
+LIVE = ("momentum", "blend")            # what /picks locks each month now
 MARKET_NEUTRAL = {"factor_ls"}          # benched vs cash, not SPY (beta is hedged out)
+_FRESH_PRICED = {"momentum", "blend"}   # books that pull fresh prices on lock
 
 
 def lock(strategy="momentum", refresh=False):
@@ -140,7 +171,7 @@ def lock(strategy="momentum", refresh=False):
     if strategy not in PICKERS:
         raise ValueError(f"unknown strategy {strategy!r} (use {sorted(PICKERS)})")
     picker = PICKERS[strategy]
-    weights, prices, asof = picker(refresh=refresh) if strategy == "momentum" else picker()
+    weights, prices, asof = picker(refresh=refresh) if strategy in _FRESH_PRICED else picker()
     spy_close = float(get_prices("SPY", refresh=refresh)["Close"].iloc[-1])
 
     rec = {
