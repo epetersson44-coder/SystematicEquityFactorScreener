@@ -24,7 +24,7 @@ import os
 import numpy as np
 import pandas as pd
 
-from fundamentals import get_fundamentals_asof
+from fundamentals import get_fundamentals_asof, piotroski_fscore_asof
 from factors import calculate_factors, altman_z, beneish_m
 from score import score
 from screen import EXCLUDE_SECTORS, MIN_CAP, MAX_CAP, MIN_Z, MAX_M
@@ -53,18 +53,19 @@ def daily_panel():
     return _PANEL
 
 
-def screen_asof(asof, close_row, universe, sector_neutral=False):
-    """Rank `universe` by the 5-factor composite using POINT-IN-TIME fundamentals as of
-    `asof`, applying the same funnel as the live screen (band → ex-financials → Altman-Z
-    → Beneish-M → rank). `close_row` is a Series ticker->price at `asof`, used for the
-    point-in-time market cap. sector_neutral ranks within sector (see score()). Returns
-    the ranked long-side DataFrame."""
+def screen_asof(asof, close_row, universe, sector_neutral=False, source="simfin"):
+    """Rank `universe` by the composite using POINT-IN-TIME fundamentals as of `asof`,
+    applying the same funnel as the live screen (band → ex-financials → Altman-Z → Beneish-M
+    → rank). `close_row` is a Series ticker->price at `asof`, used for the point-in-time
+    market cap. sector_neutral ranks within sector (see score()). source: 'simfin' (~2020+)
+    or 'edgar' (survivorship-free, ~2010+). Includes the F-Score (top composite weight), to
+    match the live screen. Returns the ranked long-side DataFrame."""
     rows = []
     for t in universe:
         price = close_row.get(t)
         if price is None or not np.isfinite(price) or price <= 0:
             continue
-        f = get_fundamentals_asof(t, asof, price=float(price))
+        f = get_fundamentals_asof(t, asof, price=float(price), source=source)
         mc = f.get("market_cap")
         if mc is None or not (MIN_CAP <= mc <= MAX_CAP):
             continue
@@ -79,6 +80,7 @@ def screen_asof(asof, close_row, universe, sector_neutral=False):
         rec = calculate_factors(f)
         rec["market_cap"] = mc
         rec["sector"] = f.get("sector")                      # for sector-neutral ranking
+        rec["fscore"] = piotroski_fscore_asof(t, asof, source=source)   # quality (top weight)
         rows.append(rec)
     df = pd.DataFrame(rows)
     return score(df, sector_neutral=sector_neutral).dropna(subset=["composite"]) if not df.empty else df
@@ -93,23 +95,27 @@ class ScheduledWeights(CrossSectionalStrategy):
         return self.sched.get(closes.index[i])
 
 
-def build_schedules(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", sector_neutral=False):
+def build_schedules(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", sector_neutral=False,
+                    source="simfin", universe=None):
     """At each rebalance date, compute BOTH baskets, point-in-time:
       - top: the top-`top_n` factor picks (equal weight)
       - universe: the WHOLE eligible (band+scrubbed) universe, equal weight — the FAIR,
         same-style benchmark that isolates the factor SIGNAL from the small-cap-value style.
-    sector_neutral ranks within sector (see score()). Returns (top_schedule, universe_schedule).
+    sector_neutral ranks within sector (see score()). source: 'simfin' or 'edgar'. `universe`
+    caps the names screened each rebalance (default = all priced names; pass a list to bound
+    EDGAR's per-name fetches). Returns (top_schedule, universe_schedule).
     freq: 'QS' quarterly (default), 'MS' monthly."""
     panel = daily_panel()
     close = panel["Close"]
     dates = close.index
-    universe = list(close.columns)
+    if universe is None:
+        universe = list(close.columns)
     top_sched, uni_sched = {}, {}
     for target in pd.date_range(start, end, freq=freq):
         if target > dates[-1]:
             break
         d = dates[dates.searchsorted(target)]                # first trading day on/after
-        ranked = screen_asof(d, close.loc[d], universe, sector_neutral=sector_neutral)
+        ranked = screen_asof(d, close.loc[d], universe, sector_neutral=sector_neutral, source=source)
         if ranked.empty:
             continue
         names = ranked["ticker"].tolist()
@@ -141,10 +147,11 @@ def _stats(eq, label):
 
 
 def run_factor_backtest(top_n=20, start="2021-07-01", end="2025-03-01", freq="QS", cost_bps=30,
-                        sector_neutral=False):
+                        sector_neutral=False, source="simfin", universe=None):
     """Point-in-time, survivorship-aware backtest. Returns (factor_eq, uni_eq, spy_eq, stats)
-    — the factor top-N vs the equal-weight eligible universe (fair, same-style) vs SPY."""
-    top_sched, uni_sched = build_schedules(top_n, start, end, freq, sector_neutral)
+    — the factor top-N vs the equal-weight eligible universe (fair, same-style) vs SPY.
+    source: 'simfin' (~2020+) or 'edgar' (survivorship-free fundamentals, ~2010+)."""
+    top_sched, uni_sched = build_schedules(top_n, start, end, freq, sector_neutral, source, universe)
     if not top_sched:
         raise RuntimeError("no rebalance produced picks — check the date window / data")
     panel = daily_panel()
