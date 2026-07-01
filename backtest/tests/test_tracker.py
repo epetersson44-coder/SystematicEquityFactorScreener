@@ -205,6 +205,32 @@ def test_blend_cash_etf_optional():
     assert float(w.sum()) < 1.0 - 0.005
 
 
+def test_blend_mf_etf_third_leg():
+    # mf_etf="DBMF": three-way inverse-vol split, DBMF priced into the lock, sum <= 1.
+    import numpy as np
+    import backtest.trend_sleeve as ts
+    n = 300
+    idx = pd.bdate_range("2019-01-01", periods=n)
+    rng = np.random.default_rng(21)
+    panel = pd.DataFrame({t: 100 * np.cumprod(1 + (0.004 if t in ("SPY", "TLT") else -0.004)
+                                              + rng.normal(0, 0.015, n))
+                          for t in ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]}, index=idx)
+    mf = pd.DataFrame({"Close": 100 * np.cumprod(1 + rng.normal(0.0003, 0.006, n))}, index=idx)
+    trend_eq = pd.Series(10_000 * np.cumprod(1 + rng.normal(0.0003, 0.007, n)), index=idx)
+    orig = (ts.etf_panel, ts.run_trend, tracker.get_prices)
+    ts.etf_panel = lambda *a, **k: {"Close": panel}
+    ts.run_trend = lambda *a, **k: trend_eq
+    tracker.get_prices = lambda *a, **k: mf
+    try:
+        w, prices, _ = tracker.blend_picks(cash_etf=None, mf_etf="DBMF")
+    finally:
+        ts.etf_panel, ts.run_trend, tracker.get_prices = orig
+    assert "DBMF" in w.index and w["DBMF"] > 0.05           # a real third leg
+    assert "SPY" in w.index
+    assert float(w.sum()) <= 1.0 + 1e-9                     # still unleveraged
+    assert prices["DBMF"] == float(mf["Close"].iloc[-1])    # priced for the lock file
+
+
 # ----------------------------------------------- momentum trend-filter failsafe
 def test_market_risk_on_above_and_below_ma():
     orig = tracker.get_prices

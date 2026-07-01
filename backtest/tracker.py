@@ -130,7 +130,7 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
     return weights, prices, asof
 
 
-def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV"):
+def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV", mf_etf=None):
     """Today's UNLEVERAGED SPY + cross-asset-trend blend, as net ETF weights: (weights, prices, asof).
 
     The project's headline result (trend_sleeve.py + timing_luck.py, 2006-2026 vs SPY
@@ -141,21 +141,44 @@ def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV"):
     single-look history). Long-only, NO borrowing; any unallocated weight is cash. A real
     6-ETF monthly allocation you could run in a brokerage account — this is the one book
     worth tracking live (the factor screener was a proven zero-edge result). Benched vs
-    SPY. The risk-parity equity/trend split is recomputed from full-history vols each lock."""
+    SPY. The risk-parity equity/trend split is recomputed from full-history vols each lock.
+
+    mf_etf: optional managed-futures ETF (e.g. "DBMF") added as a THIRD risk-parity leg.
+    Rationale: a CTA replicator carries the 50+-market futures breadth (FX, rates,
+    commodity curves) our 6-ETF sleeve can't reach on free data — measured corr to the
+    homemade sleeve only ~0.3 (DBMF) / ~0.05 (KMLM), and the 3-way blend improved Sharpe
+    AND maxDD on the available window. OFF BY DEFAULT: that window is 2019+/2021+ only and
+    contains 2022 (the best CTA year in decades) — promising, NOT full-cycle proven, so
+    turning it on is the book owner's call, not code's. When set, the SPY/sleeve/MF split
+    is inverse-vol over their common history and eq_weight is ignored."""
     from backtest.trend_sleeve import etf_panel, run_trend, VolTargetTSMOM, ENSEMBLE_LOOKS
     closes = etf_panel(refresh=refresh)["Close"]
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
-    if eq_weight is None:                                   # inverse-vol risk parity: SPY vs trend sleeve
-        al = pd.DataFrame({"SPY": closes["SPY"], "trend": run_trend(cash_rate=0.0)}).dropna()
-        al = al.pct_change().dropna()
-        ivs, ivt = 1.0 / al["SPY"].std(), 1.0 / al["trend"].std()
-        eq_weight = ivs / (ivs + ivt)
+    w_mf = 0.0
+    if mf_etf:                                              # 3-way inverse-vol: SPY / sleeve / MF-ETF
+        mf_px = get_prices(mf_etf, refresh=refresh)["Close"]
+        al = pd.DataFrame({"SPY": closes["SPY"], "trend": run_trend(cash_rate=0.0),
+                           "mf": mf_px}).dropna().pct_change().dropna()
+        iv = 1.0 / al.std()
+        w = iv / iv.sum()
+        eq_weight, w_trend, w_mf = float(w["SPY"]), float(w["trend"]), float(w["mf"])
+    else:
+        if eq_weight is None:                               # inverse-vol risk parity: SPY vs trend sleeve
+            al = pd.DataFrame({"SPY": closes["SPY"], "trend": run_trend(cash_rate=0.0)}).dropna()
+            al = al.pct_change().dropna()
+            ivs, ivt = 1.0 / al["SPY"].std(), 1.0 / al["trend"].std()
+            eq_weight = ivs / (ivs + ivt)
+        w_trend = 1.0 - eq_weight
     tw = VolTargetTSMOM(max_gross=1.0, every=1, looks=ENSEMBLE_LOOKS).target_weights(closes, i)
     tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
-    net = pd.Series({"SPY": eq_weight}).add((1.0 - eq_weight) * tw, fill_value=0.0)
+    net = pd.Series({"SPY": eq_weight}).add(w_trend * tw, fill_value=0.0)
+    if w_mf > 1e-9:
+        net = net.add(pd.Series({mf_etf: w_mf}), fill_value=0.0)
     net = net[net.abs() > 1e-9]
     prices = closes.iloc[i].reindex(net.index)
+    if mf_etf and mf_etf in net.index:
+        prices[mf_etf] = float(mf_px.iloc[-1])
 
     # The unallocated slice is cash — in a real account that's T-bills, not 0%. Park it in
     # a T-bill ETF (SGOV) so the live book earns the rf its backtest counterpart is owed
