@@ -55,11 +55,12 @@ class TSMOM(CrossSectionalStrategy):
     """Long-flat 12-month time-series momentum, rebalanced monthly. Hold each instrument at
     1/n_universe when its trailing `look`-day return is positive, else 0 (cash). Fully invested
     when all instruments trend up; rotates to cash as they roll over (the defensive profile)."""
-    def __init__(self, look=252, n_universe=len(ETFS), every=21):
+    def __init__(self, look=252, n_universe=len(ETFS), every=21, offset=0):
         self.look, self.n, self.every = look, n_universe, every
+        self.offset = offset % every        # which bar of the cycle to trade on (timing-luck knob)
 
     def target_weights(self, closes, i):
-        if i < self.look or i % self.every != 0:
+        if i < self.look or i % self.every != self.offset:
             return None
         row, past = closes.iloc[i], closes.iloc[i - self.look]
         w = {}
@@ -78,13 +79,14 @@ class VolTargetTSMOM(CrossSectionalStrategy):
     the sleeve runs hot when many uncorrelated trends are calm and dials down when vol spikes or
     trends roll over — the mechanism behind trend's smooth risk profile."""
     def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=1.0,
-                 long_short=False):
+                 long_short=False, offset=0):
         self.look, self.vol_lb, self.target_vol, self.every, self.max_gross = (
             look, vol_lb, target_vol, every, max_gross)
         self.long_short = long_short                     # True: SHORT down-trending assets too
+        self.offset = offset % every        # which bar of the cycle to trade on (timing-luck knob)
 
     def target_weights(self, closes, i):
-        if i < self.look or i % self.every != 0:
+        if i < self.look or i % self.every != self.offset:
             return None
         rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
         sign = {}
@@ -111,7 +113,7 @@ class VolTargetTSMOM(CrossSectionalStrategy):
 
 
 def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gross=1.0,
-              financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0):
+              financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0, offset=0):
     """Equity curve of the cross-asset trend sleeve. UNLEVERAGED by default (max_gross=1.0: the
     sleeve scales DOWN toward its vol target and parks the rest in cash, but never borrows) —
     removing the old 2x cap actually IMPROVED the blend (Sharpe 0.85→0.90, maxDD −21%→−18%):
@@ -122,13 +124,14 @@ def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gro
     rate (the sleeve parks in cash when assets aren't trending — that cash should earn T-bills)."""
     panels = panels or etf_panel()
     if vol_target:
-        strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross, long_short=long_short)
+        strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross, long_short=long_short,
+                               offset=offset)
         return run_xs(panels, strat, cost=costs.proportional(cost_bps), fill="next_open",
                       allow_short=long_short, gross_max=max_gross,
                       leverage=(1.0 if long_short else max_gross),
                       financing_bps=(0 if long_short else financing_bps),
                       borrow_bps=(borrow_bps if long_short else 0.0), cash_rate=cash_rate)
-    return run_xs(panels, TSMOM(), cost=costs.proportional(cost_bps), fill="next_open",
+    return run_xs(panels, TSMOM(offset=offset), cost=costs.proportional(cost_bps), fill="next_open",
                   cash_rate=cash_rate)
 
 
