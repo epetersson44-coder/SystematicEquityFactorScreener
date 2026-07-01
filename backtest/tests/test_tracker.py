@@ -255,6 +255,47 @@ def test_simulate_cash_month_is_flat():
     assert abs(s["final"] - 10_000.0) < 1e-6                # cash -> dead flat, missed the move
 
 
+# ----------------------------------------------- net-of-cost simulation
+_DATES3 = pd.to_datetime(["2026-01-02", "2026-02-02", "2026-03-02"])
+_SPY3 = pd.Series([400.0, 410.0, 420.0], index=_DATES3)
+
+
+def test_simulate_charges_the_initial_buy_in():
+    recs = [{"data_asof": "2026-01-02", "picks": {"A": 1.0}}]
+    closes = pd.DataFrame({"A": [100.0, 100.0, 100.0]}, index=_DATES3)
+    _, s = tracker._simulate(recs, closes, _SPY3, 10_000.0, cost_bps=10.0)
+    assert abs(s["final"] - 10_000.0 * (1 - 0.001)) < 1e-6  # 100% turnover x 10bps
+    assert abs(s["turnovers"][0] - 1.0) < 1e-12
+
+
+def test_simulate_identical_relock_flat_prices_costs_nothing():
+    recs = [{"data_asof": "2026-01-02", "picks": {"A": 0.5, "B": 0.5}},
+            {"data_asof": "2026-02-02", "picks": {"A": 0.5, "B": 0.5}}]
+    closes = pd.DataFrame({"A": [100.0] * 3, "B": [50.0] * 3}, index=_DATES3)
+    _, s = tracker._simulate(recs, closes, _SPY3, 10_000.0, cost_bps=10.0)
+    assert abs(s["turnovers"][1]) < 1e-12                   # no drift, no trade
+    assert abs(s["cum_cost"] - 0.001) < 1e-12               # only the buy-in
+
+
+def test_simulate_full_swap_costs_two_way_turnover():
+    recs = [{"data_asof": "2026-01-02", "picks": {"A": 1.0}},
+            {"data_asof": "2026-02-02", "picks": {"B": 1.0}}]
+    closes = pd.DataFrame({"A": [100.0] * 3, "B": [50.0] * 3}, index=_DATES3)
+    _, s = tracker._simulate(recs, closes, _SPY3, 10_000.0, cost_bps=10.0)
+    assert abs(s["turnovers"][1] - 2.0) < 1e-12             # sell 100% + buy 100%
+    assert abs(s["final"] - 10_000.0 * (1 - 0.001) * (1 - 0.002)) < 1e-6
+
+
+def test_simulate_drift_makes_held_names_cost_a_trim():
+    # Same picks re-locked, but A doubled while B was flat: A drifted 50%->2/3 of the
+    # book, so rebalancing back to 50/50 trades |2/3-1/2|*2 = 1/3 two-way.
+    recs = [{"data_asof": "2026-01-02", "picks": {"A": 0.5, "B": 0.5}},
+            {"data_asof": "2026-02-02", "picks": {"A": 0.5, "B": 0.5}}]
+    closes = pd.DataFrame({"A": [100.0, 200.0, 200.0], "B": [50.0, 50.0, 50.0]}, index=_DATES3)
+    _, s = tracker._simulate(recs, closes, _SPY3, 10_000.0, cost_bps=10.0)
+    assert abs(s["turnovers"][1] - 1.0 / 3.0) < 1e-12
+
+
 # ----------------------------------------------- entry-price basis (dividend drift)
 def test_entry_prices_use_current_panel_basis():
     # yfinance RE-SCALES the whole adjusted history when a new dividend is paid. A stored

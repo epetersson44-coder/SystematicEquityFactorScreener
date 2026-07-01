@@ -267,11 +267,18 @@ def _entry_prices(closes, asof, picks, fallback=None):
     return out
 
 
-def _simulate(recs, closes, spy_close, initial=10_000.0):
+def _simulate(recs, closes, spy_close, initial=10_000.0, cost_bps=10.0):
     """ONE managed paper portfolio: start with `initial`, hold each month's locked
     basket until the next lock, then rebalance into the new picks; carry the value
     forward. Returns (equity Series, summary). Prices come from the universe panel,
     so any pick's value at any date is looked up consistently.
+
+    NET OF COSTS: each rebalance charges `cost_bps` on TRADED weight — the two-way
+    turnover between the incoming basket and the previous basket's weights after they
+    DRIFTED with the month's prices (a winner that grew from 20% to 24% of the book
+    costs 4 points of turnover to trim back, even if the name is 'held'). The first
+    lock pays a full buy-in. A record that only ever reported gross would quietly
+    overstate a high-turnover book; the fall memo needs the net number.
 
     recs: list of {data_asof, picks} (one per monthly lock). closes: (date x ticker)
     panel. spy_close: Series of SPY close by date."""
@@ -281,25 +288,38 @@ def _simulate(recs, closes, spy_close, initial=10_000.0):
     bounds = dates + [end]                                # each basket runs lock_k -> lock_{k+1}
     value = initial
     curve = {dates[0]: initial}
+    drifted = {}                                          # prior basket's weights, price-drifted
+    turnovers, cum_cost = [], 0.0
     for k, rec in enumerate(recs):
         d0, d1 = bounds[k], bounds[k + 1]
+        traded = sum(abs(rec["picks"].get(t, 0.0) - drifted.get(t, 0.0))
+                     for t in set(rec["picks"]) | set(drifted))
+        fee = traded * cost_bps / 10_000.0
+        value *= (1.0 - fee)
+        cum_cost += fee
+        turnovers.append(traded)
         if d1 <= d0:
             continue
-        seg_ret = 0.0
+        seg_ret, name_ret = 0.0, {}
         for t, w in rec["picks"].items():
             if t not in closes.columns:
                 continue
             p0, p1 = closes.at[d0, t], closes.at[d1, t]
             if p0 == p0 and p1 == p1 and p0 > 0:          # both prices present
-                seg_ret += w * (p1 / p0 - 1)
+                name_ret[t] = p1 / p0 - 1
+                seg_ret += w * name_ret[t]
         value *= (1 + seg_ret)
         curve[d1] = value
+        drifted = {t: w * (1 + name_ret.get(t, 0.0)) / (1 + seg_ret)
+                   for t, w in rec["picks"].items()}
     eq = pd.Series(curve).sort_index()
     s0 = float(spy_close.loc[spy_close.index >= dates[0]].iloc[0])
     s1 = float(spy_close.iloc[-1])
     return eq, {"final": value, "ret": value / initial - 1,
                 "spy_ret": s1 / s0 - 1, "spy_final": initial * (s1 / s0),
-                "start": dates[0].date(), "end": end.date()}
+                "start": dates[0].date(), "end": end.date(),
+                "cost_bps": cost_bps, "cum_cost": cum_cost, "turnovers": turnovers,
+                "avg_turnover": float(np.mean(turnovers)) if turnovers else 0.0}
 
 
 def report(strategy="momentum", initial=10_000.0, refresh=False):
@@ -328,19 +348,24 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
         print(f"  ({len(recs)} lock(s) chained; dollar-neutral ~$5k long / $5k short, borrow not modeled)")
     else:
         print(f"Managed ${initial:,.0f} paper portfolio ({strategy}), {s['start']} -> {s['end']}:")
-        print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
+        print(f"  strategy : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)  NET of {s['cost_bps']:.0f}bps on traded weight")
         print(f"  SPY      : ${s['spy_final']:>11,.0f}   ({s['spy_ret'] * 100:+.1f}%)")
         print(f"  excess   : {(s['ret'] - s['spy_ret']) * 100:+.1f}%")
         print(f"  ({len(recs)} monthly lock(s) chained; rebalances into new picks each month)")
+    print(f"  costs: cumulative drag {s['cum_cost'] * 100:.2f}% "
+          f"(avg two-way turnover {s['avg_turnover'] * 100:.0f}%/lock incl. the initial buy-in; "
+          f"taxes NOT modeled — monthly turnover is short-term gains in a real account)")
 
     now = closes.iloc[-1]
     rows = []
-    for rec in recs:
+    for idx, rec in enumerate(sorted(recs, key=lambda r: r["data_asof"])):
         entry = _entry_prices(closes, rec["data_asof"], rec["picks"], rec.get("lock_prices"))
         ret = sum(w * (float(now.get(t, np.nan)) / entry[t] - 1)
                   for t, w in rec["picks"].items()
                   if np.isfinite(entry.get(t, np.nan)) and float(now.get(t, np.nan)) == float(now.get(t, np.nan)))
-        rows.append({"lock_date": rec["lock_date"], "n": rec["n"], "basket_%_since_lock": round(ret * 100, 2)})
+        rows.append({"lock_date": rec["lock_date"], "n": rec["n"],
+                     "basket_%_since_lock": round(ret * 100, 2),
+                     "turnover_%": round(s["turnovers"][idx] * 100)})
     print("\nPer-month basket (each since its own lock):")
     print(pd.DataFrame(rows).to_string(index=False))
     eq.to_csv(os.path.join(out_dir, "_equity.csv"))
