@@ -35,10 +35,23 @@ from backtest import costs, metrics
 ETFS = ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]
 TREND_START = "2006-07-01"
 
+# The ADOPTED signal construction (2026-07-01 A/B, all-offset-swept so the comparison is
+# timing-luck-controlled): the Moskowitz-Ooi-Pedersen 1/3/12-month ensemble DOMINATES the
+# single 252d lookback — its WORST rebalance offset (blend Sharpe 0.875) beats the single
+# look's MEDIAN (0.854); luck-free all-21 average 0.943 vs 0.869; maxDD -16% vs -18%;
+# better in every crisis window (GFC +6.9% vs +5.3%, COVID -0.2% vs -1.8%, 2022 -6.4% vs
+# -11.0%) and lower SPY corr (0.24 vs 0.29). Faster lookbacks exit fast crashes sooner.
+# Adopted on distribution dominance, not a cherry-picked draw. The BIL cash-hurdle gate
+# (hurdle=True) tested a WASH on this window (rf ~0 for half of it) — available, not default.
+ENSEMBLE_LOOKS = (21, 63, 252)
+
 
 def etf_panel(tickers=ETFS, refresh=False):
-    """{'Close','Open'} (date x ETF) total-return-adjusted, from yfinance, cached."""
-    paths = {f: os.path.join(CACHE_DIR, f"trend_{f}.csv") for f in ("Close", "Open")}
+    """{'Close','Open'} (date x ETF) total-return-adjusted, from yfinance, cached.
+    The default 6-ETF universe keeps its historical cache name; any other set gets its
+    own keyed files so alternate universes can't silently overwrite the main cache."""
+    key = "" if set(tickers) == set(ETFS) else "_" + "_".join(sorted(tickers))
+    paths = {f: os.path.join(CACHE_DIR, f"trend{key}_{f}.csv") for f in ("Close", "Open")}
     if not refresh and all(os.path.exists(p) for p in paths.values()):
         cached = {f: pd.read_csv(p, index_col=0, parse_dates=True) for f, p in paths.items()}
         if set(cached["Close"].columns) == set(tickers):     # cache must match the requested universe
@@ -77,34 +90,65 @@ class VolTargetTSMOM(CrossSectionalStrategy):
     risk per bet = risk parity among the 'on' set), then scale the whole sleeve to a TARGET
     annualized portfolio vol (estimated from the recent covariance), capped at `max_gross`. So
     the sleeve runs hot when many uncorrelated trends are calm and dials down when vol spikes or
-    trends roll over — the mechanism behind trend's smooth risk profile."""
+    trends roll over — the mechanism behind trend's smooth risk profile.
+
+    looks: optional tuple of lookbacks, e.g. (21, 63, 252) — the Moskowitz-Ooi-Pedersen
+    ensemble. Each instrument's signal becomes the AVERAGE of the per-lookback signs, so
+    positions scale in thirds as trends at different speeds agree, instead of cliffing on
+    one 252-day number. Default None = single `look` (the original construction).
+    hurdle_col: optional column (e.g. "BIL") treated as the CASH leg — a trend must beat
+    the T-bill return over the same window to count as up (MOP measure momentum on EXCESS
+    returns; with cash at 4-5%, an asset up +3%/yr is a DOWN trend). The hurdle column is
+    a reference only, never traded; bars where it has no data fall back to a 0 hurdle."""
     def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=1.0,
-                 long_short=False, offset=0):
+                 long_short=False, offset=0, looks=None, hurdle_col=None):
         self.look, self.vol_lb, self.target_vol, self.every, self.max_gross = (
             look, vol_lb, target_vol, every, max_gross)
         self.long_short = long_short                     # True: SHORT down-trending assets too
         self.offset = offset % every        # which bar of the cycle to trade on (timing-luck knob)
+        self.looks = tuple(looks) if looks else (look,)
+        self.hurdle_col = hurdle_col
+
+    def _hurdle(self, closes, i, lk):
+        """Cash return over the same window (the excess-return gate), 0 if unavailable."""
+        if self.hurdle_col is None:
+            return 0.0
+        b0 = closes.iloc[i].get(self.hurdle_col)
+        bm = closes.iloc[i - lk].get(self.hurdle_col)
+        if b0 and bm and np.isfinite(b0) and np.isfinite(bm):
+            return b0 / bm - 1
+        return 0.0
 
     def target_weights(self, closes, i):
-        if i < self.look or i % self.every != self.offset:
+        if i < max(self.looks) or i % self.every != self.offset:
             return None
         rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
-        sign = {}
+        strength = {}                                    # signed signal in [-1, 1] per name
         for t in closes.columns:
-            p0, pm = closes.iloc[i].get(t), closes.iloc[i - self.look].get(t)
+            if t == self.hurdle_col:
+                continue                                 # reference leg, never traded
+            p0 = closes.iloc[i].get(t)
             v = rets[t].std() if t in rets else np.nan
-            if not (p0 and pm and np.isfinite(p0) and np.isfinite(pm) and np.isfinite(v) and v > 0):
+            if not (p0 and np.isfinite(p0) and np.isfinite(v) and v > 0):
                 continue
-            mom = p0 / pm - 1
-            if mom > 0:
-                sign[t] = 1.0
-            elif self.long_short and mom < 0:
-                sign[t] = -1.0                           # short the downtrend (managed-futures style)
-        if not sign:
+            sigs = []
+            for lk in self.looks:
+                pm = closes.iloc[i - lk].get(t)
+                if not (pm and np.isfinite(pm)):
+                    sigs = None
+                    break                                # no full history -> skip the name
+                mom = p0 / pm - 1 - self._hurdle(closes, i, lk)
+                sigs.append(1.0 if mom > 0 else (-1.0 if self.long_short else 0.0))
+            if sigs is None:
+                continue
+            s = float(np.mean(sigs))
+            if s != 0.0:
+                strength[t] = s
+        if not strength:
             return pd.Series(dtype=float)                # all cash
-        on = list(sign)
-        invvol = 1.0 / (rets[on].std() * np.sqrt(252))   # inverse-vol risk weights, signed
-        w = pd.Series({t: sign[t] * invvol[t] for t in on})
+        on = list(strength)
+        invvol = 1.0 / (rets[on].std() * np.sqrt(252))   # inverse-vol risk weights
+        w = pd.Series({t: strength[t] * invvol[t] for t in on})
         w = w / w.abs().sum()                            # normalize GROSS to 1
         cov = rets[on].cov() * 252
         pvol = float(np.sqrt(w.values @ cov.values @ w.values))
@@ -113,7 +157,8 @@ class VolTargetTSMOM(CrossSectionalStrategy):
 
 
 def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gross=1.0,
-              financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0, offset=0):
+              financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0, offset=0,
+              looks=ENSEMBLE_LOOKS, hurdle=False):
     """Equity curve of the cross-asset trend sleeve. UNLEVERAGED by default (max_gross=1.0: the
     sleeve scales DOWN toward its vol target and parks the rest in cash, but never borrows) —
     removing the old 2x cap actually IMPROVED the blend (Sharpe 0.85→0.90, maxDD −21%→−18%):
@@ -121,11 +166,17 @@ def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gro
     back into the levered (managed-futures) construction; financing is charged on borrowed cash.
     long_short=True shorts down-trending assets (real managed-futures profile → stronger
     crisis alpha), charging borrow on the short legs. cash_rate credits idle cash with the rf
-    rate (the sleeve parks in cash when assets aren't trending — that cash should earn T-bills)."""
-    panels = panels or etf_panel()
+    rate (the sleeve parks in cash when assets aren't trending — that cash should earn T-bills).
+    looks: signal lookback ensemble — default the adopted MOP 1/3/12-month blend (see
+    ENSEMBLE_LOOKS note); pass looks=(252,) to reproduce the original single-look results."""
+    hurdle_col = "BIL" if hurdle else None
+    if panels is None:
+        panels = etf_panel(ETFS + ["BIL"]) if hurdle else etf_panel()
+    if hurdle and "BIL" not in panels["Close"].columns:
+        raise ValueError("hurdle=True needs BIL in the panel (use etf_panel(ETFS + ['BIL']))")
     if vol_target:
         strat = VolTargetTSMOM(target_vol=target_vol, max_gross=max_gross, long_short=long_short,
-                               offset=offset)
+                               offset=offset, looks=looks, hurdle_col=hurdle_col)
         return run_xs(panels, strat, cost=costs.proportional(cost_bps), fill="next_open",
                       allow_short=long_short, gross_max=max_gross,
                       leverage=(1.0 if long_short else max_gross),

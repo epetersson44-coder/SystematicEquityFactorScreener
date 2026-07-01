@@ -133,13 +133,16 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
 def blend_picks(refresh=False, eq_weight=None):
     """Today's UNLEVERAGED SPY + cross-asset-trend blend, as net ETF weights: (weights, prices, asof).
 
-    The project's headline result (trend_sleeve.py, Sharpe ~0.90, maxDD −18% over 2006-2026 vs
-    SPY 0.64/−55%): the SPY equity leg + the vol-targeted 6-ETF trend sleeve (SPY/EFA/TLT/IEF/
-    GLD/DBC), combined risk-parity (inverse-vol). Long-only, NO borrowing; any unallocated weight
-    is cash. A real 6-ETF monthly allocation you could run in a brokerage account — this is the
-    one book worth tracking live (the factor screener was a proven zero-edge result). Benched vs
+    The project's headline result (trend_sleeve.py + timing_luck.py, 2006-2026 vs SPY
+    Sharpe 0.64/maxDD −55%): the SPY equity leg + the vol-targeted 6-ETF trend sleeve
+    (SPY/EFA/TLT/IEF/GLD/DBC), combined risk-parity (inverse-vol). Signals use the ADOPTED
+    1/3/12-month MOP ensemble (timing-luck-controlled blend Sharpe ~0.94 vs 0.87 single-look
+    — see trend_sleeve.ENSEMBLE_LOOKS; the June 2026 lock predates this and stays immutable
+    single-look history). Long-only, NO borrowing; any unallocated weight is cash. A real
+    6-ETF monthly allocation you could run in a brokerage account — this is the one book
+    worth tracking live (the factor screener was a proven zero-edge result). Benched vs
     SPY. The risk-parity equity/trend split is recomputed from full-history vols each lock."""
-    from backtest.trend_sleeve import etf_panel, run_trend, VolTargetTSMOM
+    from backtest.trend_sleeve import etf_panel, run_trend, VolTargetTSMOM, ENSEMBLE_LOOKS
     closes = etf_panel(refresh=refresh)["Close"]
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
@@ -148,7 +151,7 @@ def blend_picks(refresh=False, eq_weight=None):
         al = al.pct_change().dropna()
         ivs, ivt = 1.0 / al["SPY"].std(), 1.0 / al["trend"].std()
         eq_weight = ivs / (ivs + ivt)
-    tw = VolTargetTSMOM(max_gross=1.0, every=1).target_weights(closes, i)
+    tw = VolTargetTSMOM(max_gross=1.0, every=1, looks=ENSEMBLE_LOOKS).target_weights(closes, i)
     tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
     net = pd.Series({"SPY": eq_weight}).add((1.0 - eq_weight) * tw, fill_value=0.0)
     net = net[net.abs() > 1e-9]
