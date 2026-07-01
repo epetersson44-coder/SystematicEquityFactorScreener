@@ -159,6 +159,52 @@ def test_ls_raises_when_no_shorts_survive():
     raise AssertionError("expected RuntimeError when no short names survive the leg filter")
 
 
+# ----------------------------------------------- blend book: SGOV cash slice
+def _blend_run(trend_up=("TLT", "IEF", "GLD"), cash_etf="SGOV", eq_weight=0.4):
+    """blend_picks on a synthetic ETF panel (etf_panel + SGOV pricing stubbed)."""
+    import numpy as np
+    import backtest.trend_sleeve as ts
+    n = 300
+    idx = pd.bdate_range("2019-01-01", periods=n)
+    rng = np.random.default_rng(11)
+    cols = {}
+    for t in ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]:
+        drift = 0.005 if t in trend_up else -0.005                    # unambiguous trends...
+        cols[t] = 100 * np.cumprod(1 + drift + rng.normal(0, 0.015, n))  # ...with REAL vol, so
+    panel = pd.DataFrame(cols, index=idx)                             # the 10% vol target binds
+    assert all((panel[t].iloc[-1] > panel[t].iloc[0]) == (t in trend_up) for t in cols)
+    orig_panel, orig_gp = ts.etf_panel, tracker.get_prices
+    ts.etf_panel = lambda *a, **k: {"Close": panel}
+    tracker.get_prices = lambda *a, **k: pd.DataFrame(
+        {"Close": pd.Series([100.25], index=[idx[-1]])})
+    try:
+        return tracker.blend_picks(eq_weight=eq_weight, cash_etf=cash_etf)
+    finally:
+        ts.etf_panel, tracker.get_prices = orig_panel, orig_gp
+
+
+def test_blend_residual_cash_goes_to_tbill_etf():
+    w, prices, _ = _blend_run()
+    assert "SGOV" in w.index                                # the cash slice is invested
+    assert abs(float(w.sum()) - 1.0) < 1e-9                 # fully allocated incl. T-bills
+    assert w["SGOV"] > 0.005
+    assert prices["SGOV"] == 100.25                         # priced for the lock file
+
+
+def test_blend_all_risk_off_parks_in_tbills():
+    # nothing trending up -> the whole trend sleeve is cash -> SPY leg + SGOV only
+    w, _, _ = _blend_run(trend_up=())
+    assert set(w.index) == {"SPY", "SGOV"}
+    assert abs(w["SPY"] - 0.4) < 1e-9
+    assert abs(w["SGOV"] - 0.6) < 1e-9
+
+
+def test_blend_cash_etf_optional():
+    w, _, _ = _blend_run(cash_etf=None)
+    assert "SGOV" not in w.index                            # plain-cash behaviour preserved
+    assert float(w.sum()) < 1.0 - 0.005
+
+
 # ----------------------------------------------- momentum trend-filter failsafe
 def test_market_risk_on_above_and_below_ma():
     orig = tracker.get_prices

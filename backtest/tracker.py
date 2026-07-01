@@ -130,7 +130,7 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
     return weights, prices, asof
 
 
-def blend_picks(refresh=False, eq_weight=None):
+def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV"):
     """Today's UNLEVERAGED SPY + cross-asset-trend blend, as net ETF weights: (weights, prices, asof).
 
     The project's headline result (trend_sleeve.py + timing_luck.py, 2006-2026 vs SPY
@@ -155,7 +155,22 @@ def blend_picks(refresh=False, eq_weight=None):
     tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
     net = pd.Series({"SPY": eq_weight}).add((1.0 - eq_weight) * tw, fill_value=0.0)
     net = net[net.abs() > 1e-9]
-    return net, closes.iloc[i].reindex(net.index), asof
+    prices = closes.iloc[i].reindex(net.index)
+
+    # The unallocated slice is cash — in a real account that's T-bills, not 0%. Park it in
+    # a T-bill ETF (SGOV) so the live book earns the rf its backtest counterpart is owed
+    # (worth ~+0.3% CAGR at 2025-26 rates; cash_rate A/B in the sleeve backtest). If the
+    # ETF can't be priced right now, the slice stays plain cash rather than blocking a lock.
+    resid = 1.0 - float(net.sum())
+    if cash_etf and resid > 0.005:
+        try:
+            px = float(get_prices(cash_etf, refresh=refresh)["Close"].iloc[-1])
+            if np.isfinite(px) and px > 0:
+                net[cash_etf] = resid
+                prices[cash_etf] = px
+        except Exception as e:                              # noqa: BLE001 — cash fallback, never fatal
+            print(f"[blend] {cash_etf} unpriceable ({e}) — leaving {resid:.1%} as plain cash")
+    return net, prices, asof
 
 
 # Live books. momentum (real, crash-guarded edge) and blend (the headline Sharpe-0.90 trend
