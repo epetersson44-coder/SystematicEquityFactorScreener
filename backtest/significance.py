@@ -138,6 +138,14 @@ TRIAL_SHARPES = [
     0.90,   # risk-parity SPY+trend, unleveraged (the prior headline)
     0.93,   # vol-managed blend (Moreira-Muir overlay)
     0.94,   # 1/3/12 ensemble blend, all-offset average (the current headline)
+    # leverage_study.py (2026-07-01, real-rf financing) — bull-window candidates:
+    0.87,   # blend levered 1.5x
+    0.83,   # blend levered 2.0x
+    0.82,   # blend levered 2.3x (SPY-vol-matched)
+    0.69,   # return stack SPY + 0.5x trend overlay
+    0.73,   # return stack SPY + 1.0x trend overlay
+    0.65,   # Gayed LRS 2x (200d MA LETF rotation)
+    0.63,   # Gayed LRS 3x
 ]
 
 
