@@ -20,7 +20,7 @@ import backtest.tracker as T
 from backtest.universe import download_panel
 from backtest.data import get_prices
 
-BOOKS = ["momentum", "blend", "factor", "factor_ls"]   # blend = the live headline; factor/ls = history
+BOOKS = ["momentum", "blend", "sso_stack", "factor", "factor_ls"]   # first three live; factor/ls = history
 HERE = os.path.dirname(__file__)
 DATA_JSON = os.path.join(HERE, "desk_data.json")        # latest snapshot (for the widget)
 HISTORY = os.path.join(HERE, "desk_history.json")       # accumulating monthly dataset

@@ -146,6 +146,11 @@ TRIAL_SHARPES = [
     0.73,   # return stack SPY + 1.0x trend overlay
     0.65,   # Gayed LRS 2x (200d MA LETF rotation)
     0.63,   # Gayed LRS 3x
+    # SSO-mix (retail return-stack) sensitivity, full cycle:
+    0.82,   # 25% SSO + 75% trend
+    0.71,   # 40% SSO + 60% trend
+    0.66,   # 50% SSO + 50% trend (the sso_stack live book)
+    0.61,   # 65% SSO + 35% trend
 ]
 
 

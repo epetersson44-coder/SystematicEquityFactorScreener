@@ -179,11 +179,15 @@ def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV", mf_etf=None):
     prices = closes.iloc[i].reindex(net.index)
     if mf_etf and mf_etf in net.index:
         prices[mf_etf] = float(mf_px.iloc[-1])
+    net, prices = _park_cash(net, prices, cash_etf, refresh)
+    return net, prices, asof
 
-    # The unallocated slice is cash — in a real account that's T-bills, not 0%. Park it in
-    # a T-bill ETF (SGOV) so the live book earns the rf its backtest counterpart is owed
-    # (worth ~+0.3% CAGR at 2025-26 rates; cash_rate A/B in the sleeve backtest). If the
-    # ETF can't be priced right now, the slice stays plain cash rather than blocking a lock.
+
+def _park_cash(net, prices, cash_etf, refresh=False):
+    """Allocate a book's unallocated residual to a T-bill ETF. In a real account idle
+    cash is T-bills, not 0% (~+0.3% CAGR at 2025-26 rates — cash_rate A/B in the sleeve
+    backtest). If the ETF can't be priced right now, the slice stays plain cash rather
+    than blocking a lock."""
     resid = 1.0 - float(net.sum())
     if cash_etf and resid > 0.005:
         try:
@@ -192,18 +196,47 @@ def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV", mf_etf=None):
                 net[cash_etf] = resid
                 prices[cash_etf] = px
         except Exception as e:                              # noqa: BLE001 — cash fallback, never fatal
-            print(f"[blend] {cash_etf} unpriceable ({e}) — leaving {resid:.1%} as plain cash")
+            print(f"[tracker] {cash_etf} unpriceable ({e}) — leaving {resid:.1%} as plain cash")
+    return net, prices
+
+
+def sso_stack_picks(refresh=False, sso_weight=0.5, cash_etf="SGOV"):
+    """Today's RETURN-STACK book, retail-implementable with no margin account:
+    (weights, prices, asof).
+
+    50% SSO + 50% x the vol-targeted trend sleeve. SSO is a 2x daily-reset S&P fund, so
+    half the book carries FULL SPY exposure with the financing embedded at institutional
+    rates (leverage_study.py validated the sim vs the real fund: corr 0.996, gap
+    -0.3%/yr) — which frees the other half of the cash for the trend sleeve. Net ~150%
+    notional: the ETF replication of "SPY + 0.5x trend overlay" (Hoffstein return
+    stacking), NOT the risk-balanced 2.3x levered blend (that needs trend-side leverage
+    no retail ETF offers). Study result (2026-07-01, leverage_study windows): beats SPY's
+    raw return in EVERY window incl. crisis-free bulls, Sharpe >= SPY throughout, BUT
+    keeps ~SPY crash depth (-53% in a 2008) — the honest trade vs the unlevered blend's
+    -16%. The sleeve slice not deployed by the vol target parks in T-bills."""
+    from backtest.trend_sleeve import etf_panel, VolTargetTSMOM, ENSEMBLE_LOOKS
+    closes = etf_panel(refresh=refresh)["Close"]
+    i = len(closes) - 1
+    asof = closes.index[i].date().isoformat()
+    tw = VolTargetTSMOM(max_gross=1.0, every=1, looks=ENSEMBLE_LOOKS).target_weights(closes, i)
+    tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
+    net = pd.Series({"SSO": sso_weight}).add((1.0 - sso_weight) * tw, fill_value=0.0)
+    net = net[net.abs() > 1e-9]
+    prices = closes.iloc[i].reindex(net.index)
+    prices["SSO"] = float(get_prices("SSO", refresh=refresh)["Close"].iloc[-1])
+    net, prices = _park_cash(net, prices, cash_etf, refresh)
     return net, prices, asof
 
 
-# Live books. momentum (real, crash-guarded edge) and blend (the headline Sharpe-0.90 trend
-# allocation) are the keepers tracked monthly; factor/factor_ls stay defined so their existing
-# locks still report, but are no longer locked forward (the screener was a proven zero-edge result).
-PICKERS = {"momentum": momentum_picks, "blend": blend_picks,
+# Live books. momentum (real, crash-guarded edge), blend (the headline trend allocation,
+# luck-free ensemble Sharpe ~0.94), and sso_stack (the retail return-stack: beats SPY raw
+# in every window, SPY-like crash depth) are tracked monthly; factor/factor_ls stay defined
+# so their existing locks still report, but are no longer locked forward (proven zero-edge).
+PICKERS = {"momentum": momentum_picks, "blend": blend_picks, "sso_stack": sso_stack_picks,
            "factor": factor_picks, "factor_ls": factor_ls_picks}
-LIVE = ("momentum", "blend")            # what /picks locks each month now
-MARKET_NEUTRAL = {"factor_ls"}          # benched vs cash, not SPY (beta is hedged out)
-_FRESH_PRICED = {"momentum", "blend"}   # books that pull fresh prices on lock
+LIVE = ("momentum", "blend", "sso_stack")          # what /picks locks each month now
+MARKET_NEUTRAL = {"factor_ls"}                     # benched vs cash, not SPY (beta is hedged out)
+_FRESH_PRICED = {"momentum", "blend", "sso_stack"}  # books that pull fresh prices on lock
 
 
 def lock(strategy="momentum", refresh=False):

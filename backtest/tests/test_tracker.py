@@ -205,6 +205,44 @@ def test_blend_cash_etf_optional():
     assert float(w.sum()) < 1.0 - 0.005
 
 
+def _sso_run(trend_up=("TLT", "IEF", "GLD"), cash_etf="SGOV"):
+    """sso_stack_picks on a synthetic panel (etf_panel + SSO/SGOV pricing stubbed)."""
+    import numpy as np
+    import backtest.trend_sleeve as ts
+    n = 300
+    idx = pd.bdate_range("2019-01-01", periods=n)
+    rng = np.random.default_rng(11)
+    panel = pd.DataFrame({t: 100 * np.cumprod(1 + (0.005 if t in trend_up else -0.005)
+                                              + rng.normal(0, 0.015, n))
+                          for t in ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]}, index=idx)
+    px = {"SSO": 60.5, "SGOV": 100.25}
+    orig = (ts.etf_panel, tracker.get_prices)
+    ts.etf_panel = lambda *a, **k: {"Close": panel}
+    tracker.get_prices = lambda t, *a, **k: pd.DataFrame(
+        {"Close": pd.Series([px[t]], index=[idx[-1]])})
+    try:
+        return tracker.sso_stack_picks(cash_etf=cash_etf)
+    finally:
+        ts.etf_panel, tracker.get_prices = orig
+
+
+def test_sso_stack_half_sso_half_sleeve_rest_tbills():
+    w, prices, _ = _sso_run()
+    assert abs(w["SSO"] - 0.5) < 1e-9                       # the 2x-wrapped SPY leg
+    assert prices["SSO"] == 60.5                            # priced for the lock file
+    sleeve = w.drop(["SSO", "SGOV"], errors="ignore")
+    assert len(sleeve) > 0 and (sleeve > 0).all()           # scaled trend sleeve present
+    assert abs(float(w.sum()) - 1.0) < 1e-9                 # fully allocated incl. T-bills
+    assert w.get("SGOV", 0) > 0.005                         # vol-target residual in T-bills
+
+
+def test_sso_stack_risk_off_is_sso_plus_tbills():
+    # nothing trending -> the sleeve half sits entirely in T-bills, SSO leg unchanged
+    w, _, _ = _sso_run(trend_up=())
+    assert set(w.index) == {"SSO", "SGOV"}
+    assert abs(w["SSO"] - 0.5) < 1e-9 and abs(w["SGOV"] - 0.5) < 1e-9
+
+
 def test_blend_mf_etf_third_leg():
     # mf_etf="DBMF": three-way inverse-vol split, DBMF priced into the lock, sum <= 1.
     import numpy as np
