@@ -88,5 +88,95 @@
         ]
       }
     }
+  },
+  {
+    "month": "2026-07",
+    "generated": "2026-07-01",
+    "books": {
+      "momentum": {
+        "lock": "2026-06-13",
+        "final": 9701.69,
+        "ret": -2.98,
+        "spyret": 0.85,
+        "picks": [
+          "MRNA",
+          "GLW",
+          "GEV",
+          "AMAT",
+          "DDOG",
+          "CAT",
+          "DELL",
+          "LRCX",
+          "WDC",
+          "TER",
+          "MU",
+          "AMD",
+          "KLAC",
+          "VLO",
+          "CMI",
+          "CIEN",
+          "SNDK",
+          "GNRC",
+          "VRT",
+          "INTC",
+          "GOOGL",
+          "GOOG",
+          "WBD",
+          "FIX",
+          "STX",
+          "VTRS",
+          "EME",
+          "PWR",
+          "JBL",
+          "AVGO",
+          "NVDA",
+          "KEYS",
+          "COHR",
+          "DD",
+          "ADI",
+          "IVZ",
+          "NEM",
+          "HPE",
+          "CASY",
+          "LITE",
+          "APA",
+          "BKR",
+          "AKAM",
+          "MPWR",
+          "HAL",
+          "NUE",
+          "ON",
+          "ALB",
+          "STLD"
+        ]
+      },
+      "blend": {
+        "lock": "2026-06-29",
+        "final": 10026.13,
+        "ret": 0.26,
+        "spyret": 2.36,
+        "picks": [
+          "SPY",
+          "EFA",
+          "DBC",
+          "GLD",
+          "IEF",
+          "TLT"
+        ]
+      },
+      "factor": {
+        "lock": "2026-06-14",
+        "final": 11060.94,
+        "ret": 10.61,
+        "spyret": 0.86,
+        "picks": [
+          "PRGS",
+          "LCII",
+          "MNRO",
+          "CWST",
+          "MGRC"
+        ]
+      }
+    }
   }
 ]

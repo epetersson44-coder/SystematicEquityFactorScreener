@@ -9,6 +9,8 @@
 # Offline + synthetic — run_screen and download_panel are stubbed, so no network and
 # no SimFin key. Runs via pytest or `python -m backtest.tests.test_tracker`.
 
+import os
+
 import pandas as pd
 
 import screen
@@ -179,6 +181,72 @@ def test_simulate_cash_month_is_flat():
     spy = pd.Series([400.0, 440.0], index=dates)
     _, s = tracker._simulate(recs, closes, spy, 10_000.0)
     assert abs(s["final"] - 10_000.0) < 1e-6                # cash -> dead flat, missed the move
+
+
+# ----------------------------------------------- entry-price basis (dividend drift)
+def test_entry_prices_use_current_panel_basis():
+    # yfinance RE-SCALES the whole adjusted history when a new dividend is paid. A stored
+    # lock price then sits on a stale basis and corrupts "since lock" returns; reading the
+    # entry from the current panel keeps both ends of the return on one basis.
+    dates = pd.to_datetime(["2026-01-02", "2026-06-01"])
+    stored = {"A": 100.0}                                   # snapshotted at lock time
+    re_adj = pd.DataFrame({"A": [90.0, 108.0]}, index=dates)  # history re-scaled x0.9 since
+    entry = tracker._entry_prices(re_adj, "2026-01-02", {"A": 1.0}, stored)["A"]
+    assert abs(entry - 90.0) < 1e-12                        # read from the panel itself
+    true_ret = 108.0 / entry - 1
+    assert abs(true_ret - 0.20) < 1e-12                     # the real +20% is preserved
+    stale_ret = 108.0 / stored["A"] - 1                     # the old bug: +8% out of thin air
+    assert abs(stale_ret - true_ret) > 0.05
+
+
+def test_entry_prices_fallback_to_stored_when_unpriced():
+    dates = pd.to_datetime(["2026-01-02", "2026-06-01"])
+    closes = pd.DataFrame({"A": [50.0, 60.0]}, index=dates)   # B missing from the panel
+    e = tracker._entry_prices(closes, "2026-01-02", {"A": 1.0, "B": 1.0}, {"B": 20.0})
+    assert abs(e["A"] - 50.0) < 1e-12
+    assert abs(e["B"] - 20.0) < 1e-12                       # best-effort fallback
+
+
+# ----------------------------------------------- desk: cash slice must not vanish
+def _dash_run(picks, lock_prices, panel, spy):
+    """Run dashboard._book on ONE synthetic lock with disk/network stubbed out."""
+    import tempfile
+    import json as _json
+    import backtest.dashboard as dash
+    tmp = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmp, "booktest"))
+    rec = {"lock_date": "2026-01-02", "data_asof": "2026-01-02", "strategy": "booktest",
+           "n": len(picks), "picks": picks, "lock_prices": lock_prices, "spy_lock": 100.0}
+    with open(os.path.join(tmp, "booktest", "2026-01-02.json"), "w") as f:
+        _json.dump(rec, f)
+    orig = (tracker.PICKS_DIR, dash.download_panel, dash.get_prices)
+    tracker.PICKS_DIR = tmp
+    dash.download_panel = lambda *a, **k: {"Close": panel}
+    dash.get_prices = lambda *a, **k: pd.DataFrame({"Close": spy})
+    try:
+        return dash._book("booktest", {})
+    finally:
+        tracker.PICKS_DIR, dash.download_panel, dash.get_prices = orig
+
+
+def test_desk_book_keeps_the_cash_slice():
+    # A blend-style lock that's only 50% invested: flat prices must mean a FLAT $10k book
+    # (the old bug valued only the invested half -> a fake -50%).
+    dates = pd.to_datetime(["2026-01-02", "2026-02-02"])
+    panel = pd.DataFrame({"A": [100.0, 100.0]}, index=dates)
+    spy = pd.Series([500.0, 510.0], index=dates)
+    b = _dash_run({"A": 0.5}, {"A": 100.0}, panel, spy)
+    assert abs(b["final"] - 10_000.0) < 1e-6
+    assert abs(b["ret"]) < 1e-9
+
+
+def test_desk_book_dollar_neutral_pnl_rides_on_cash():
+    # Long-short lock (net ~0): book value = $10k cash + spread P&L, not ~$0.
+    dates = pd.to_datetime(["2026-01-02", "2026-02-02"])
+    panel = pd.DataFrame({"A": [100.0, 110.0], "B": [50.0, 50.0]}, index=dates)
+    spy = pd.Series([500.0, 510.0], index=dates)
+    b = _dash_run({"A": 0.5, "B": -0.5}, {"A": 100.0, "B": 50.0}, panel, spy)
+    assert abs(b["final"] - 10_500.0) < 1e-6                # +10% on the $5k long leg
 
 
 if __name__ == "__main__":

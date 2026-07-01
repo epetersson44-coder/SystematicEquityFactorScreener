@@ -61,13 +61,21 @@ def _book(strategy, smap):
     panel = download_panel(names)["Close"]
     lock = pd.to_datetime(rec["data_asof"])
     seg = panel[panel.index >= lock]
-    shares = {t: 10_000 * rec["picks"][t] / rec["lock_prices"][t] for t in names}
-    eq = seg.mul(pd.Series(shares)).sum(axis=1).dropna()
+    # entry prices from the SAME panel as today's marks (not the stored lock_prices,
+    # which sit on a stale adjustment basis once a dividend re-scales the history)
+    entry = T._entry_prices(panel, rec["data_asof"], rec["picks"], rec.get("lock_prices"))
+    shares = {t: 10_000 * rec["picks"][t] / entry[t] for t in names if np.isfinite(entry[t])}
+    # weights can sum to < 1 (blend parks in cash) or ~0 (dollar-neutral) — the
+    # UNALLOCATED slice is cash and must be part of book value, not dropped
+    cash = 10_000 * (1.0 - sum(rec["picks"][t] for t in shares))
+    eq = (seg.mul(pd.Series(shares)).sum(axis=1) + cash).dropna()
     now = seg.iloc[-1]
 
     pos, sec = [], {}
     for t in names:
-        e = rec["lock_prices"][t]
+        e = entry.get(t, np.nan)
+        if not np.isfinite(e):
+            continue
         c = float(now.get(t, np.nan))
         if c != c:
             continue
@@ -128,8 +136,11 @@ def _daily_book(strategy):
         if not rec["picks"]:                             # cash segment (risk-off) -> flat
             eq = pd.Series(value, index=seg.index)
         else:
-            shares = {t: value * rec["picks"][t] / rec["lock_prices"][t] for t in rec["picks"]}
-            eq = seg.mul(pd.Series(shares)).sum(axis=1).dropna()
+            entry = T._entry_prices(panel, rec["data_asof"], rec["picks"], rec.get("lock_prices"))
+            shares = {t: value * rec["picks"][t] / entry[t]
+                      for t in rec["picks"] if np.isfinite(entry[t])}
+            cash = value * (1.0 - sum(rec["picks"][t] for t in shares))
+            eq = (seg.mul(pd.Series(shares)).sum(axis=1) + cash).dropna()
         if eq.empty:
             continue
         last = k == len(recs) - 1

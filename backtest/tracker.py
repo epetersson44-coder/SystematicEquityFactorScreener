@@ -202,6 +202,30 @@ def lock(strategy="momentum", refresh=False):
     return rec
 
 
+def _entry_prices(closes, asof, picks, fallback=None):
+    """Entry prices for a locked basket, read from the CURRENT panel at the lock's
+    data_asof bar: {ticker: price}.
+
+    Why not the stored lock_prices? Those were snapshotted from ADJUSTED closes at lock
+    time, and yfinance re-scales the whole adjusted history every time a new dividend is
+    paid — so months later the stored numbers sit on a DIFFERENT adjustment basis than
+    today's panel, and every "since lock" return computed across the two silently drifts
+    by the accumulated adjustments. Reading entry and exit from the SAME panel keeps both
+    ends on one basis (and makes the return total-return-correct). The stored lock_prices
+    stay in the JSON as the immutable audit record; a name with no panel price at the
+    as-of bar falls back to them (best effort — right at lock time, drifts after)."""
+    idx = closes.index[closes.index >= pd.to_datetime(asof)]
+    row = closes.loc[idx[0]] if len(idx) else pd.Series(dtype=float)
+    fallback = fallback or {}
+    out = {}
+    for t in picks:
+        p = float(row.get(t, np.nan))
+        if not (np.isfinite(p) and p > 0):
+            p = float(fallback.get(t, np.nan))
+        out[t] = p
+    return out
+
+
 def _simulate(recs, closes, spy_close, initial=10_000.0):
     """ONE managed paper portfolio: start with `initial`, hold each month's locked
     basket until the next lock, then rebalance into the new picks; carry the value
@@ -271,8 +295,10 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
     now = closes.iloc[-1]
     rows = []
     for rec in recs:
-        ret = sum(w * (float(now.get(t, np.nan)) / rec["lock_prices"][t] - 1)
-                  for t, w in rec["picks"].items() if float(now.get(t, np.nan)) == float(now.get(t, np.nan)))
+        entry = _entry_prices(closes, rec["data_asof"], rec["picks"], rec.get("lock_prices"))
+        ret = sum(w * (float(now.get(t, np.nan)) / entry[t] - 1)
+                  for t, w in rec["picks"].items()
+                  if np.isfinite(entry.get(t, np.nan)) and float(now.get(t, np.nan)) == float(now.get(t, np.nan)))
         rows.append({"lock_date": rec["lock_date"], "n": rec["n"], "basket_%_since_lock": round(ret * 100, 2)})
     print("\nPer-month basket (each since its own lock):")
     print(pd.DataFrame(rows).to_string(index=False))
