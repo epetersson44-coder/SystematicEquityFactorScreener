@@ -269,6 +269,48 @@ def test_blend_mf_etf_third_leg():
     assert prices["DBMF"] == float(mf["Close"].iloc[-1])    # priced for the lock file
 
 
+# ----------------------------------------------- shopping list (real-account orders)
+def _shop(capital, fractional, weights, px_map):
+    orig = (tracker.PICKERS.get("shoptest"), tracker.get_prices)
+    tracker.PICKERS["shoptest"] = lambda refresh=False: (
+        pd.Series(weights),
+        pd.Series({t: px_map.get(t, float("nan")) for t in weights}),   # substituted names
+        "2026-07-01")                                                    # are priced via get_prices
+    tracker.get_prices = lambda t, *a, **k: pd.DataFrame(
+        {"Close": pd.Series([px_map[t]], index=[pd.Timestamp("2026-07-01")])})
+    try:
+        return tracker.shopping_list(capital, book="shoptest", refresh=False,
+                                     fractional=fractional)
+    finally:
+        tracker.get_prices = orig[1]
+        if orig[0] is None:
+            tracker.PICKERS.pop("shoptest", None)
+
+
+def test_shopping_list_fractional_fills_exactly():
+    px = {"UPRO": 141.39, "IEF": 94.03, "IAU": 75.96, "SGOV": 100.40}
+    df = _shop(8000.0, True, {"UPRO": 1 / 3, "IEF": 0.5, "GLD": 1 / 6}, px)
+    assert list(df["ticker"])[:3] == ["IEF", "UPRO", "IAU"]     # sorted by weight, GLD->IAU
+    assert abs(df["est_cost_$"].sum() - 8000.0) < 1.5           # fully deployed
+    assert abs(df.attrs["leftover_cash"]) < 1.5
+
+
+def test_shopping_list_whole_shares_sweep_to_sgov():
+    px = {"UPRO": 141.39, "IEF": 94.03, "IAU": 75.96, "SGOV": 100.40}
+    df = _shop(8000.0, False, {"UPRO": 1 / 3, "IEF": 0.5, "GLD": 1 / 6}, px)
+    assert (df["shares"] == df["shares"].astype(int)).all()     # whole shares only
+    assert "SGOV" in set(df["ticker"])                          # residue swept
+    assert df.attrs["leftover_cash"] < px["SGOV"]               # less than one SGOV share
+
+
+def test_shopping_list_substitutions_priced_live():
+    px = {"UPRO": 100.0, "SPLG": 85.76, "PDBC": 15.78, "SGOV": 100.40}
+    df = _shop(6000.0, True, {"UPRO": 0.5, "SPY": 0.3, "DBC": 0.2}, px).set_index("ticker")
+    assert "SPY" not in df.index and "SPLG" in df.index         # SPY slice -> SPLG
+    assert "DBC" not in df.index and "PDBC" in df.index         # DBC -> PDBC (no K-1)
+    assert abs(df.loc["SPLG", "price"] - 85.76) < 1e-9          # substitute priced live
+
+
 # ----------------------------------------------- red-team regressions (2026-07-01)
 def test_picker_refuses_partial_quote_row():
     # A transient feed hiccup (one ETF's last bar NaN) must BLOCK the lock, not silently

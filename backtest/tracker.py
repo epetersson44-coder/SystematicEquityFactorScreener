@@ -130,6 +130,54 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
     return weights, prices, asof
 
 
+# Real-account substitutions for the sso_stack book (Chase, ~$8k): cheap-share or
+# tax-cleaner twins of the sleeve's ETFs. GLD's ~$370 share can't fill a ~2% slice;
+# DBC issues a K-1 tax form; SPY's ~$745 share strands the sleeve's equity slice.
+REAL_SUBS = {"GLD": "IAU", "DBC": "PDBC", "SPY": "SPLG"}
+
+
+def shopping_list(capital, book="sso_stack", refresh=True, fractional=True, subs=None):
+    """Translate a book's CURRENT picks into an order sheet for a real account:
+    DataFrame [ticker, weight, target_$, price, shares, est_cost_$], residue -> SGOV.
+
+    This was the /picks prompt's step 2a done by hand each month — the single most
+    error-prone step of the real-money pipeline and, until now, the only untested one.
+    fractional=True sizes dollar-based orders (shares to 4dp); False floors to whole
+    shares. Substitutions (REAL_SUBS) are applied to sleeve slices; the substitute is
+    priced live. `capital` is the CASH being deployed — state it explicitly, never guess.
+    """
+    subs = REAL_SUBS if subs is None else subs
+    weights, prices, asof = PICKERS[book](refresh=refresh)
+    rows, spent = [], 0.0
+    for t, w in weights.sort_values(ascending=False).items():
+        tt = subs.get(t, t)
+        if tt != t:
+            px = float(get_prices(tt, refresh=refresh)["Close"].iloc[-1])
+        else:
+            px = float(prices[t])
+        if not (np.isfinite(px) and px > 0):
+            raise RuntimeError(f"shopping_list: no live price for {tt}")
+        target = capital * float(w)
+        sh = round(target / px, 4) if fractional else int(target // px)
+        cost = sh * px
+        spent += cost
+        rows.append({"ticker": tt, "weight": round(float(w), 4), "target_$": round(target, 2),
+                     "price": round(px, 2), "shares": sh, "est_cost_$": round(cost, 2)})
+    residue = capital - spent
+    if residue > 1.0:
+        sgov = float(get_prices("SGOV", refresh=refresh)["Close"].iloc[-1])
+        sh = round(residue / sgov, 4) if fractional else int(residue // sgov)
+        if sh > 0:
+            rows.append({"ticker": "SGOV", "weight": round(residue / capital, 4),
+                         "target_$": round(residue, 2), "price": round(sgov, 2),
+                         "shares": sh, "est_cost_$": round(sh * sgov, 2)})
+            spent += sh * sgov
+    df = pd.DataFrame(rows)
+    df.attrs["asof"] = asof
+    df.attrs["leftover_cash"] = round(capital - spent, 2)
+    return df
+
+
 def _require_complete_row(closes, book):
     """Refuse to pick off a PARTIAL quote row. A transient data hiccup (one ETF's last
     bar missing) would otherwise silently DROP that asset from the lock and renormalize
