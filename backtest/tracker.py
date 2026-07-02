@@ -405,6 +405,43 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
     return eq
 
 
+def report_shadow(strategy="blend", leverage=2.3, spread=0.004, initial=10_000.0, cost_bps=10.0):
+    """Derived SHADOW book: what `strategy`'s live record would look like run at constant
+    `leverage`, financing the borrowed (leverage-1) at T-bills + spread. NOT a locked
+    book — pure arithmetic on the real immutable locks, so it accrues the same
+    out-of-sample credibility with zero extra process. This is the paper preview of the
+    2.3x levered blend (leverage_study.py) that Erik watches while the account grows
+    toward the ~$110k portfolio-margin / futures threshold where it becomes purchasable
+    (Reg-T caps at 2.0x below that)."""
+    from backtest.leverage_study import tbill_series
+    out_dir = os.path.join(PICKS_DIR, strategy)
+    files = sorted(f for f in os.listdir(out_dir) if f.endswith(".json")) if os.path.isdir(out_dir) else []
+    if not files:
+        print(f"no locked picks for {strategy!r} yet — nothing to shadow")
+        return None
+    recs = [json.load(open(os.path.join(out_dir, f))) for f in files]
+    universe = sorted({t for rec in recs for t in rec["picks"]})
+    closes = download_panel(universe)["Close"]
+    spy_close = get_prices("SPY")["Close"]
+    eq, s = _simulate(recs, closes, spy_close, initial, cost_bps=cost_bps)
+    rf = tbill_series(closes.index)
+
+    lev_val, curve = initial, {eq.index[0]: initial}
+    for d0, d1 in zip(eq.index[:-1], eq.index[1:]):
+        r = float(eq.loc[d1] / eq.loc[d0] - 1)
+        yrs = (d1 - d0).days / 365.25
+        fin = (leverage - 1.0) * (float(rf.loc[rf.index >= d0].iloc[0]) + spread) * yrs
+        lev_val *= 1.0 + leverage * r - fin
+        curve[d1] = lev_val
+    lev_eq = pd.Series(curve).sort_index()
+    print(f"SHADOW {leverage:.1f}x {strategy} (derived from the same locks, rf+{spread * 1e4:.0f}bps financing):")
+    print(f"  shadow   : ${lev_val:>11,.0f}   ({(lev_val / initial - 1) * 100:+.1f}%)")
+    print(f"  base     : ${s['final']:>11,.0f}   ({s['ret'] * 100:+.1f}%)")
+    print(f"  SPY      : ${s['spy_final']:>11,.0f}   ({s['spy_ret'] * 100:+.1f}%)")
+    print(f"  (not tradeable below ~$110k portfolio margin; Reg-T caps at 2.0x — a watch-only book)")
+    return lev_eq
+
+
 if __name__ == "__main__":
     import sys
     cmd = sys.argv[1] if len(sys.argv) > 1 else "lock"
@@ -414,5 +451,7 @@ if __name__ == "__main__":
         lock(strat, refresh=True)
     elif cmd == "report":
         report(strat, refresh=True)
+    elif cmd == "shadow":
+        report_shadow(strat if len(sys.argv) > 2 else "blend")
     else:
-        print("usage: python -m backtest.tracker [lock|report] [strategy]")
+        print("usage: python -m backtest.tracker [lock|report|shadow] [strategy]")

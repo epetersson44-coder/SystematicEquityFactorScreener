@@ -269,6 +269,36 @@ def test_blend_mf_etf_third_leg():
     assert prices["DBMF"] == float(mf["Close"].iloc[-1])    # priced for the lock file
 
 
+# ----------------------------------------------- shadow levered book
+def test_shadow_lev_arithmetic():
+    # Two locks a month apart, base book +10% in the month, rf=0 -> shadow 2x = +20%
+    # (financing is zero at rf=0/spread=0, so the shadow is exactly L x the base).
+    import tempfile
+    import json as _json
+    import backtest.leverage_study as ls
+    tmp = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmp, "shadowtest"))
+    dates = ["2026-01-02", "2026-02-02"]
+    for d, px in zip(dates, [100.0, 110.0]):
+        rec = {"lock_date": d, "data_asof": d, "strategy": "shadowtest", "n": 1,
+               "picks": {"A": 1.0}, "lock_prices": {"A": px}, "spy_lock": 100.0}
+        with open(os.path.join(tmp, "shadowtest", d + ".json"), "w") as f:
+            _json.dump(rec, f)
+    idx = pd.to_datetime(dates)
+    panel = pd.DataFrame({"A": [100.0, 110.0]}, index=idx)
+    spy = pd.Series([500.0, 505.0], index=idx)
+    orig = (tracker.PICKS_DIR, tracker.download_panel, tracker.get_prices, ls.tbill_series)
+    tracker.PICKS_DIR = tmp
+    tracker.download_panel = lambda *a, **k: {"Close": panel}
+    tracker.get_prices = lambda *a, **k: pd.DataFrame({"Close": spy})
+    ls.tbill_series = lambda index, **k: pd.Series(0.0, index=index)
+    try:
+        eq = tracker.report_shadow("shadowtest", leverage=2.0, spread=0.0, cost_bps=0.0)
+    finally:
+        (tracker.PICKS_DIR, tracker.download_panel, tracker.get_prices, ls.tbill_series) = orig
+    assert abs(float(eq.iloc[-1]) - 12_000.0) < 1e-6        # 2 x (+10%) on $10k
+
+
 # ----------------------------------------------- momentum trend-filter failsafe
 def test_market_risk_on_above_and_below_ma():
     orig = tracker.get_prices
