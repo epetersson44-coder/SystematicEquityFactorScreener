@@ -101,13 +101,18 @@ class VolTargetTSMOM(CrossSectionalStrategy):
     returns; with cash at 4-5%, an asset up +3%/yr is a DOWN trend). The hurdle column is
     a reference only, never traded; bars where it has no data fall back to a 0 hurdle."""
     def __init__(self, look=252, vol_lb=63, target_vol=0.10, every=21, max_gross=1.0,
-                 long_short=False, offset=0, looks=None, hurdle_col=None):
+                 long_short=False, offset=0, looks=None, hurdle_col=None, vol_df=None):
         self.look, self.vol_lb, self.target_vol, self.every, self.max_gross = (
             look, vol_lb, target_vol, every, max_gross)
         self.long_short = long_short                     # True: SHORT down-trending assets too
         self.offset = offset % every        # which bar of the cycle to trade on (timing-luck knob)
         self.looks = tuple(looks) if looks else (look,)
         self.hurdle_col = hurdle_col
+        # optional externally-computed ANNUALIZED vol panel (date x ticker), e.g. the
+        # Yang-Zhang range estimator (volatility.yang_zhang) — smoother than the default
+        # close-to-close std, so the vol target resizes less erratically (Baltas-Kosowski:
+        # ~17% turnover reduction). None = the original close-to-close path, bit-identical.
+        self.vol_df = vol_df
 
     def _hurdle(self, closes, i, lk):
         """Cash return over the same window (the excess-return gate), 0 if unavailable."""
@@ -123,12 +128,16 @@ class VolTargetTSMOM(CrossSectionalStrategy):
         if i < max(self.looks) or i % self.every != self.offset:
             return None
         rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
+        vol_row = self.vol_df.iloc[i] if self.vol_df is not None else None
         strength = {}                                    # signed signal in [-1, 1] per name
         for t in closes.columns:
             if t == self.hurdle_col:
                 continue                                 # reference leg, never traded
             p0 = closes.iloc[i].get(t)
-            v = rets[t].std() if t in rets else np.nan
+            if vol_row is not None:                      # external (annualized) estimator
+                v = float(vol_row.get(t, np.nan)) / np.sqrt(252)   # to daily units
+            else:
+                v = rets[t].std() if t in rets else np.nan
             if not (p0 and np.isfinite(p0) and np.isfinite(v) and v > 0):
                 continue
             sigs = []
@@ -147,10 +156,16 @@ class VolTargetTSMOM(CrossSectionalStrategy):
         if not strength:
             return pd.Series(dtype=float)                # all cash
         on = list(strength)
-        invvol = 1.0 / (rets[on].std() * np.sqrt(252))   # inverse-vol risk weights
+        if vol_row is not None:
+            vols = vol_row[on].astype(float)             # annualized, external estimator
+            invvol = 1.0 / vols
+            corr = rets[on].corr()                       # correlation still from cc returns
+            cov = corr * np.outer(vols, vols)            # annualized cov, estimator-scaled
+        else:
+            invvol = 1.0 / (rets[on].std() * np.sqrt(252))   # inverse-vol risk weights
+            cov = rets[on].cov() * 252
         w = pd.Series({t: strength[t] * invvol[t] for t in on})
         w = w / w.abs().sum()                            # normalize GROSS to 1
-        cov = rets[on].cov() * 252
         pvol = float(np.sqrt(w.values @ cov.values @ w.values))
         scale = min(self.target_vol / pvol, self.max_gross) if pvol > 0 else 1.0
         return w * scale

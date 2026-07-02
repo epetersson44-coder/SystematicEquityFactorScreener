@@ -156,6 +156,7 @@ TRIAL_SHARPES = [
     0.79,   # C: 50% SSO w/ 200d Gayed filter + 50% trend (rejected: kills bull revenue)
     0.80,   # D: 33% UPRO w/ 200d Gayed filter + 67% trend (rejected: same)
     0.75,   # E: 25% UPRO + 75% trend, 75/75 balanced (rejected: loses beat-SPY thesis)
+    0.93,   # Yang-Zhang vol estimator in the sleeve (wash: identical Sharpe, -0.8% turnover)
 ]
 
 
