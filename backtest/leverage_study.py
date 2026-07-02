@@ -19,8 +19,17 @@
 #      when SPY > 200d MA, T-bills below. Biggest raw pile (3x: $207k full cycle) but
 #      Sharpe ~= SPY and -45/-55% drawdowns — more risk on the same line, not alpha.
 #
+# SYNTHETIC-MARKET RECALIBRATION (2026-07-01, backtest/synthetic.py generators, 40
+# alternate histories): the real path's -35% maxDD for the 2.3x blend was a FAVORABLE
+# DRAW. Across null/trending/bootstrapped worlds the levered book's median worst
+# drawdown is -41%..-48%, tails -72% (bootstrapped real returns) to -78% (adverse
+# trending world). Leverage created edge NOWHERE (lev-blend Sharpe gap ~-0.02 = pure
+# financing drag, every world) — the ranking stands, but size any future leverage off
+# the DISTRIBUTION (-45% typical adverse, -70%+ possible at 2.3x; ~1.8x for mid-30s),
+# never off the single historical path.
+#
 # The LETF simulator (daily reset, financing on (L-1) at rf+spread, expense ratio) is
-# VALIDATED against real SSO/UPRO: corr 0.996+, tracking gap -0.3/-0.6%/yr. Caveats that
+# VALIDATED against real SSO/UPRO: corr 0.996+, tracking gap -0.3/-0.6/yr%. Caveats that
 # stay attached to any use of these numbers: retail margin costs more than rf+40bps (the
 # implementable vehicles are LETFs/RSST-style funds which embed institutional rates);
 # MA-switching in a taxable account costs ~1-2%/yr in taxes; a levered book's drawdowns
