@@ -149,8 +149,13 @@ TRIAL_SHARPES = [
     # SSO-mix (retail return-stack) sensitivity, full cycle:
     0.82,   # 25% SSO + 75% trend
     0.71,   # 40% SSO + 60% trend
-    0.66,   # 50% SSO + 50% trend (the sso_stack live book)
+    0.66,   # 50% SSO + 50% trend (the original sso_stack book)
     0.61,   # 65% SSO + 35% trend
+    # sso_stack optimization round (pre-specified A-E, 2026-07-01), full cycle:
+    0.69,   # B: 33% UPRO + 67% trend (ADOPTED -> the live sso_stack construction)
+    0.79,   # C: 50% SSO w/ 200d Gayed filter + 50% trend (rejected: kills bull revenue)
+    0.80,   # D: 33% UPRO w/ 200d Gayed filter + 67% trend (rejected: same)
+    0.75,   # E: 25% UPRO + 75% trend, 75/75 balanced (rejected: loses beat-SPY thesis)
 ]
 
 

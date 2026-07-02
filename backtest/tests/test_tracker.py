@@ -215,7 +215,7 @@ def _sso_run(trend_up=("TLT", "IEF", "GLD"), cash_etf="SGOV"):
     panel = pd.DataFrame({t: 100 * np.cumprod(1 + (0.005 if t in trend_up else -0.005)
                                               + rng.normal(0, 0.015, n))
                           for t in ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]}, index=idx)
-    px = {"SSO": 60.5, "SGOV": 100.25}
+    px = {"UPRO": 60.5, "SGOV": 100.25}
     orig = (ts.etf_panel, tracker.get_prices)
     ts.etf_panel = lambda *a, **k: {"Close": panel}
     tracker.get_prices = lambda t, *a, **k: pd.DataFrame(
@@ -226,21 +226,21 @@ def _sso_run(trend_up=("TLT", "IEF", "GLD"), cash_etf="SGOV"):
         ts.etf_panel, tracker.get_prices = orig
 
 
-def test_sso_stack_half_sso_half_sleeve_rest_tbills():
+def test_sso_stack_third_upro_rest_sleeve_and_tbills():
     w, prices, _ = _sso_run()
-    assert abs(w["SSO"] - 0.5) < 1e-9                       # the 2x-wrapped SPY leg
-    assert prices["SSO"] == 60.5                            # priced for the lock file
-    sleeve = w.drop(["SSO", "SGOV"], errors="ignore")
+    assert abs(w["UPRO"] - 1 / 3) < 1e-9                    # the 3x-wrapped 100% SPY leg
+    assert prices["UPRO"] == 60.5                           # priced for the lock file
+    sleeve = w.drop(["UPRO", "SGOV"], errors="ignore")
     assert len(sleeve) > 0 and (sleeve > 0).all()           # scaled trend sleeve present
     assert abs(float(w.sum()) - 1.0) < 1e-9                 # fully allocated incl. T-bills
     assert w.get("SGOV", 0) > 0.005                         # vol-target residual in T-bills
 
 
-def test_sso_stack_risk_off_is_sso_plus_tbills():
-    # nothing trending -> the sleeve half sits entirely in T-bills, SSO leg unchanged
+def test_sso_stack_risk_off_is_equity_leg_plus_tbills():
+    # nothing trending -> the sleeve slice sits entirely in T-bills, equity leg unchanged
     w, _, _ = _sso_run(trend_up=())
-    assert set(w.index) == {"SSO", "SGOV"}
-    assert abs(w["SSO"] - 0.5) < 1e-9 and abs(w["SGOV"] - 0.5) < 1e-9
+    assert set(w.index) == {"UPRO", "SGOV"}
+    assert abs(w["UPRO"] - 1 / 3) < 1e-9 and abs(w["SGOV"] - 2 / 3) < 1e-9
 
 
 def test_blend_mf_etf_third_leg():

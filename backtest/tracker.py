@@ -200,30 +200,35 @@ def _park_cash(net, prices, cash_etf, refresh=False):
     return net, prices
 
 
-def sso_stack_picks(refresh=False, sso_weight=0.5, cash_etf="SGOV"):
+def sso_stack_picks(refresh=False, equity_etf="UPRO", equity_mult=3, cash_etf="SGOV"):
     """Today's RETURN-STACK book, retail-implementable with no margin account:
     (weights, prices, asof).
 
-    50% SSO + 50% x the vol-targeted trend sleeve. SSO is a 2x daily-reset S&P fund, so
-    half the book carries FULL SPY exposure with the financing embedded at institutional
-    rates (leverage_study.py validated the sim vs the real fund: corr 0.996, gap
-    -0.3%/yr) — which frees the other half of the cash for the trend sleeve. Net ~150%
-    notional: the ETF replication of "SPY + 0.5x trend overlay" (Hoffstein return
-    stacking), NOT the risk-balanced 2.3x levered blend (that needs trend-side leverage
-    no retail ETF offers). Study result (2026-07-01, leverage_study windows): beats SPY's
-    raw return in EVERY window incl. crisis-free bulls, Sharpe >= SPY throughout, BUT
-    keeps ~SPY crash depth (-53% in a 2008) — the honest trade vs the unlevered blend's
-    -16%. The sleeve slice not deployed by the vol target parks in T-bills."""
+    1/mult in a mult-x daily-reset S&P fund (default 33% UPRO = FULL 100% SPY exposure,
+    financing embedded at institutional rates; leverage_study validated the sim vs the
+    real funds: corr 0.996+, gap -0.3/-0.6%/yr) + the rest in the vol-targeted trend
+    sleeve. The higher the wrapper multiple, the more capital is freed for trend —
+    variant "B" of the 2026-07-01 pre-specified optimization: 33% UPRO + 67% trend
+    DOMINATES the original 50% SSO + 50% trend in every window (full cycle $110k vs
+    $93k, Sharpe 0.69 vs 0.66, same -52% DD; +0.9%/yr = 17 more points of the ~6.4%/yr
+    sleeve, same SPY skeleton). Pass equity_etf="SSO", equity_mult=2 for the tamer
+    original. ~167% notional: the ETF replication of "SPY + 0.67x trend overlay"
+    (return stacking), NOT the risk-balanced 2.3x levered blend (that needs trend-side
+    leverage no retail ETF offers). Beats SPY's raw return in EVERY window incl.
+    crisis-free bulls, Sharpe >= SPY throughout, BUT keeps ~SPY crash depth (-52% in a
+    2008) — the honest trade vs the unlevered blend's -16%. The sleeve slice not
+    deployed by the vol target parks in T-bills."""
     from backtest.trend_sleeve import etf_panel, VolTargetTSMOM, ENSEMBLE_LOOKS
     closes = etf_panel(refresh=refresh)["Close"]
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
+    eq_w = 1.0 / equity_mult                        # 100% SPY-equivalent exposure
     tw = VolTargetTSMOM(max_gross=1.0, every=1, looks=ENSEMBLE_LOOKS).target_weights(closes, i)
     tw = tw if (tw is not None and not tw.empty) else pd.Series(dtype=float)
-    net = pd.Series({"SSO": sso_weight}).add((1.0 - sso_weight) * tw, fill_value=0.0)
+    net = pd.Series({equity_etf: eq_w}).add((1.0 - eq_w) * tw, fill_value=0.0)
     net = net[net.abs() > 1e-9]
     prices = closes.iloc[i].reindex(net.index)
-    prices["SSO"] = float(get_prices("SSO", refresh=refresh)["Close"].iloc[-1])
+    prices[equity_etf] = float(get_prices(equity_etf, refresh=refresh)["Close"].iloc[-1])
     net, prices = _park_cash(net, prices, cash_etf, refresh)
     return net, prices, asof
 
