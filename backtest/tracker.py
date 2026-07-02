@@ -130,6 +130,20 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
     return weights, prices, asof
 
 
+def _require_complete_row(closes, book):
+    """Refuse to pick off a PARTIAL quote row. A transient data hiccup (one ETF's last
+    bar missing) would otherwise silently DROP that asset from the lock and renormalize
+    the book into the rest — a composition change nobody ordered (red-team attack #1,
+    2026-07-01). For a 6-ETF book every column is load-bearing: fail loud, re-run the
+    lock after the feed heals."""
+    last = closes.iloc[-1]
+    missing = [t for t in closes.columns if not (pd.notna(last[t]) and last[t] > 0)]
+    if missing:
+        raise RuntimeError(
+            f"[{book}] last price row ({closes.index[-1].date()}) is missing {missing} — "
+            f"refusing to lock on a partial quote row; re-run with refresh (feed hiccup?)")
+
+
 def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV", mf_etf=None):
     """Today's UNLEVERAGED SPY + cross-asset-trend blend, as net ETF weights: (weights, prices, asof).
 
@@ -153,6 +167,7 @@ def blend_picks(refresh=False, eq_weight=None, cash_etf="SGOV", mf_etf=None):
     is inverse-vol over their common history and eq_weight is ignored."""
     from backtest.trend_sleeve import etf_panel, run_trend, VolTargetTSMOM, ENSEMBLE_LOOKS
     closes = etf_panel(refresh=refresh)["Close"]
+    _require_complete_row(closes, "blend")
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
     w_mf = 0.0
@@ -220,6 +235,7 @@ def sso_stack_picks(refresh=False, equity_etf="UPRO", equity_mult=3, cash_etf="S
     deployed by the vol target parks in T-bills."""
     from backtest.trend_sleeve import etf_panel, VolTargetTSMOM, ENSEMBLE_LOOKS
     closes = etf_panel(refresh=refresh)["Close"]
+    _require_complete_row(closes, "sso_stack")
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
     eq_w = 1.0 / equity_mult                        # 100% SPY-equivalent exposure
@@ -343,6 +359,12 @@ def _simulate(recs, closes, spy_close, initial=10_000.0, cost_bps=10.0):
             if t not in closes.columns:
                 continue
             p0, p1 = closes.at[d0, t], closes.at[d1, t]
+            if p1 != p1:                                  # price gone at segment end
+                # (delisted/halted mid-hold): mark at the LAST price it actually traded
+                # inside the segment, engine-style carry-forward — scoring it flat at 0%
+                # was an optimism leak in the live record (red-team attack #4)
+                seg_px = closes[t].loc[d0:d1].dropna()
+                p1 = float(seg_px.iloc[-1]) if len(seg_px) else np.nan
             if p0 == p0 and p1 == p1 and p0 > 0:          # both prices present
                 name_ret[t] = p1 / p0 - 1
                 seg_ret += w * name_ret[t]
@@ -435,7 +457,11 @@ def report_shadow(strategy="blend", leverage=2.3, spread=0.004, initial=10_000.0
     for d0, d1 in zip(eq.index[:-1], eq.index[1:]):
         r = float(eq.loc[d1] / eq.loc[d0] - 1)
         yrs = (d1 - d0).days / 365.25
-        fin = (leverage - 1.0) * (float(rf.loc[rf.index >= d0].iloc[0]) + spread) * yrs
+        r0 = rf.asof(d0) if len(rf) else np.nan          # last known rate at/before d0
+        if not np.isfinite(r0):                          # stale/broken rf feed: never let NaN
+            r0 = 0.0                                     # poison the report (red-team #2) —
+            print(f"[shadow] no rf at {d0.date()} — financing spread only for this segment")
+        fin = (leverage - 1.0) * (float(r0) + spread) * yrs
         lev_val *= 1.0 + leverage * r - fin
         curve[d1] = lev_val
     lev_eq = pd.Series(curve).sort_index()

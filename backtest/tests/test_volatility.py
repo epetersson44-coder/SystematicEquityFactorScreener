@@ -52,6 +52,22 @@ def test_vol_df_none_is_bit_identical_to_old_path():
             assert np.allclose(wa.sort_index().values, wb.sort_index().values, atol=1e-15)
 
 
+def test_vol_df_misaligned_index_raises():
+    # Same-length but date-shifted vol panel would silently size off the wrong days'
+    # vols via positional lookup (red-team attack #3) — must raise instead.
+    rng = np.random.default_rng(5)
+    idx = pd.bdate_range("2018-01-01", periods=700)
+    closes = pd.DataFrame({k: 100 * np.cumprod(1 + 0.0005 + rng.normal(0, 0.01, 700))
+                           for k in ["A", "B"]}, index=idx)
+    shifted = pd.DataFrame(0.2, index=pd.bdate_range("2018-02-01", periods=700),
+                           columns=["A", "B"])                # same length, wrong dates
+    try:
+        VolTargetTSMOM(vol_df=shifted).target_weights(closes, 630)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError on misaligned vol_df")
+
+
 def test_vol_df_changes_sizing_not_selection():
     rng = np.random.default_rng(4)
     idx = pd.bdate_range("2018-01-01", periods=700)

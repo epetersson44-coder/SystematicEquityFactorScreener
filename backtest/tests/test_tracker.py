@@ -269,6 +269,75 @@ def test_blend_mf_etf_third_leg():
     assert prices["DBMF"] == float(mf["Close"].iloc[-1])    # priced for the lock file
 
 
+# ----------------------------------------------- red-team regressions (2026-07-01)
+def test_picker_refuses_partial_quote_row():
+    # A transient feed hiccup (one ETF's last bar NaN) must BLOCK the lock, not silently
+    # drop the asset and renormalize the book (red-team attack #1).
+    import numpy as np
+    import backtest.trend_sleeve as ts
+    n = 300
+    idx = pd.bdate_range("2019-01-01", periods=n)
+    rng = np.random.default_rng(11)
+    panel = pd.DataFrame({t: 100 * np.cumprod(1 + 0.004 + rng.normal(0, 0.012, n))
+                          for t in ["SPY", "EFA", "TLT", "IEF", "GLD", "DBC"]}, index=idx)
+    panel.iloc[-1, panel.columns.get_loc("GLD")] = float("nan")
+    orig = (ts.etf_panel, tracker.get_prices)
+    ts.etf_panel = lambda *a, **k: {"Close": panel}
+    tracker.get_prices = lambda t, *a, **k: pd.DataFrame(
+        {"Close": pd.Series([100.0], index=[idx[-1]])})
+    try:
+        try:
+            tracker.sso_stack_picks(cash_etf=None)
+        except RuntimeError as e:
+            assert "GLD" in str(e)
+            return
+        raise AssertionError("expected RuntimeError on a partial quote row")
+    finally:
+        ts.etf_panel, tracker.get_prices = orig
+
+
+def test_shadow_survives_broken_rf_feed():
+    # A stale/broken T-bill series must degrade to spread-only financing with a warning,
+    # never print $nan (red-team attack #2).
+    import numpy as np
+    import tempfile
+    import json as _json
+    import backtest.leverage_study as ls
+    tmp = tempfile.mkdtemp()
+    os.makedirs(os.path.join(tmp, "shadowrf"))
+    for d, px in zip(["2026-01-02", "2026-02-02"], [100.0, 110.0]):
+        rec = {"lock_date": d, "data_asof": d, "strategy": "shadowrf", "n": 1,
+               "picks": {"A": 1.0}, "lock_prices": {"A": px}, "spy_lock": 100.0}
+        with open(os.path.join(tmp, "shadowrf", d + ".json"), "w") as f:
+            _json.dump(rec, f)
+    idx = pd.to_datetime(["2026-01-02", "2026-02-02"])
+    panel = pd.DataFrame({"A": [100.0, 110.0]}, index=idx)
+    spy = pd.Series([500.0, 505.0], index=idx)
+    orig = (tracker.PICKS_DIR, tracker.download_panel, tracker.get_prices, ls.tbill_series)
+    tracker.PICKS_DIR = tmp
+    tracker.download_panel = lambda *a, **k: {"Close": panel}
+    tracker.get_prices = lambda *a, **k: pd.DataFrame({"Close": spy})
+    ls.tbill_series = lambda index, **k: pd.Series(np.nan, index=index)   # broken feed
+    try:
+        eq = tracker.report_shadow("shadowrf", leverage=2.0, spread=0.0, cost_bps=0.0)
+    finally:
+        tracker.PICKS_DIR, tracker.download_panel, tracker.get_prices, ls.tbill_series = orig
+    assert np.isfinite(float(eq.iloc[-1]))
+    assert abs(float(eq.iloc[-1]) - 12_000.0) < 1e-6       # 2x(+10%), rf fell back to 0
+
+
+def test_simulate_marks_vanished_price_at_last_trade():
+    # A name whose price disappears mid-month is scored at its LAST traded price,
+    # not flat 0% (red-team attack #4: the optimism leak).
+    recs = [{"data_asof": "2026-01-02", "picks": {"A": 0.5, "B": 0.5}}]
+    dates = pd.to_datetime(["2026-01-02", "2026-01-20", "2026-02-02"])
+    closes = pd.DataFrame({"A": [100.0, 100.0, 100.0],
+                           "B": [50.0, 25.0, float("nan")]}, index=dates)  # B halves, then gone
+    spy = pd.Series([400.0, 405.0, 410.0], index=dates)
+    _, s = tracker._simulate(recs, closes, spy, 10_000.0, cost_bps=0.0)
+    assert abs(s["ret"] - (0.5 * 0.0 + 0.5 * -0.5)) < 1e-12   # -25% book, not 0%
+
+
 # ----------------------------------------------- shadow levered book
 def test_shadow_lev_arithmetic():
     # Two locks a month apart, base book +10% in the month, rf=0 -> shadow 2x = +20%

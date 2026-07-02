@@ -128,6 +128,10 @@ class VolTargetTSMOM(CrossSectionalStrategy):
         if i < max(self.looks) or i % self.every != self.offset:
             return None
         rets = closes.iloc[i - self.vol_lb:i + 1].pct_change().iloc[1:]
+        if self.vol_df is not None and not self.vol_df.index.equals(closes.index):
+            # positional lookup below — a same-length but date-shifted panel would
+            # silently size positions off the WRONG days' vols (red-team attack #3)
+            raise ValueError("vol_df index must exactly match the closes panel index")
         vol_row = self.vol_df.iloc[i] if self.vol_df is not None else None
         strength = {}                                    # signed signal in [-1, 1] per name
         for t in closes.columns:
