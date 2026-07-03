@@ -157,6 +157,11 @@ TRIAL_SHARPES = [
     0.80,   # D: 33% UPRO w/ 200d Gayed filter + 67% trend (rejected: same)
     0.75,   # E: 25% UPRO + 75% trend, 75/75 balanced (rejected: loses beat-SPY thesis)
     0.93,   # Yang-Zhang vol estimator in the sleeve (wash: identical Sharpe, -0.8% turnover)
+    0.93,   # signal-TYPE ensemble (return-sign+SMA200+Donchian x looks): wash vs looks-only
+    1.13,   # BTC as 7th sleeve asset, 2015+ — SURVIVOR-SELECTED window (banked, not adopted:
+            # ~+2.3%/yr is beta rental of the decade's best asset found ex post; the design
+            # argument (trend-gated 3.5% slot, self-liquidated in both -70% winters) stands
+            # on its own and is a structural call, not a backtest call)
 ]
 
 
