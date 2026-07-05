@@ -6,7 +6,7 @@ from openpyxl import load_workbook
 from openpyxl.styles import (PatternFill, Font, Alignment, Border, Side)
 from openpyxl.utils import get_column_letter
 from score import build_factor_table, score
-from config import TICKERS
+from config import TICKERS, WEIGHTS
 
 # ── Colors ────────────────────────────────────────────────
 DARK_BLUE   = "1F3864"
@@ -125,13 +125,13 @@ def add_methodology_tab(wb):
         cell.alignment = Alignment(horizontal="center")
         cell.border = make_border()
 
-    # Factor rows
+    # Factor rows — weights pulled from config.WEIGHTS so this sheet can't drift from the code
     factors = [
-        ["EV/EBIT",          "Enterprise value relative to operating profit. Measures cheapness net of debt.", "25%", "Lower = Better"],
-        ["Price/FCF",        "Market cap relative to free cash flow. Rewards companies that convert earnings to cash.", "15%", "Lower = Better"],
-        ["ROIC",             "Return on invested capital. Best single measure of business quality and competitive moat.", "30%", "Higher = Better"],
-        ["GM Stability",     "Standard deviation of gross margin over 5 years. Stable margins signal pricing power.", "10%", "Lower = Better"],
-        ["Net Debt/EBITDA",  "Financial leverage. Negative means more cash than debt.", "20%", "Lower = Better"],
+        ["EV/EBIT",          "Enterprise value relative to operating profit. Measures cheapness net of debt.", f"{WEIGHTS['ev_ebit']:.0%}", "Lower = Better"],
+        ["Price/FCF",        "Market cap relative to free cash flow. Rewards companies that convert earnings to cash.", f"{WEIGHTS['price_fcf']:.0%}", "Lower = Better"],
+        ["ROIC",             "Return on invested capital. Best single measure of business quality and competitive moat.", f"{WEIGHTS['roic']:.0%}", "Higher = Better"],
+        ["GM Stability",     "Standard deviation of gross margin over 5 years. Stable margins signal pricing power.", f"{WEIGHTS['gm_stability']:.0%}", "Lower = Better"],
+        ["Net Debt/EBITDA",  "Financial leverage. Negative means more cash than debt.", f"{WEIGHTS['net_debt_ebitda']:.0%}", "Lower = Better"],
     ]
     for row_idx, f in enumerate(factors, start=7):
         for col_idx, val in enumerate(f, start=1):

@@ -58,8 +58,10 @@ def screen_asof(asof, close_row, universe, sector_neutral=False, source="simfin"
     applying the same funnel as the live screen (band → ex-financials → Altman-Z → Beneish-M
     → rank). `close_row` is a Series ticker->price at `asof`, used for the point-in-time
     market cap. sector_neutral ranks within sector (see score()). source: 'simfin' (~2020+)
-    or 'edgar' (survivorship-free, ~2010+). Includes the F-Score (top composite weight), to
-    match the live screen. Returns the ranked long-side DataFrame."""
+    or 'edgar' (survivorship-free, ~2010+). The F-Score is computed as a reference column
+    but carries NO composite weight — same as the live screen, whose shared score() weights
+    only config.WEIGHTS, from which the F-Score was dropped as window-overfit (2026-06; see
+    the note above config.WEIGHTS). Returns the ranked long-side DataFrame."""
     rows = []
     for t in universe:
         price = close_row.get(t)
@@ -80,7 +82,7 @@ def screen_asof(asof, close_row, universe, sector_neutral=False, source="simfin"
         rec = calculate_factors(f)
         rec["market_cap"] = mc
         rec["sector"] = f.get("sector")                      # for sector-neutral ranking
-        rec["fscore"] = piotroski_fscore_asof(t, asof, source=source)   # quality (top weight)
+        rec["fscore"] = piotroski_fscore_asof(t, asof, source=source)   # reference only: no weight in the composite
         rows.append(rec)
     df = pd.DataFrame(rows)
     return score(df, sector_neutral=sector_neutral).dropna(subset=["composite"]) if not df.empty else df

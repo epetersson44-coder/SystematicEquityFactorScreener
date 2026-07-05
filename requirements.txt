@@ -1,0 +1,14 @@
+# Pinned environment for the quant lab (Python 3.13, versions verified working 2026-07-04).
+# Recreate from scratch:
+#   /Library/Frameworks/Python.framework/Versions/3.13/bin/python3 -m venv --system-site-packages .venv
+#   .venv/bin/pip install -r requirements.txt
+# Run the test suite (one command; the files also run standalone as plain scripts):
+#   .venv/bin/python -m pytest -q test_fundamentals.py backtest/tests/
+# Stress probes (WARN-level, not pass/fail): .venv/bin/python backtest/tests/stress_test.py
+numpy==2.3.5
+pandas==2.3.3
+yfinance==0.2.66
+openpyxl==3.1.5
+requests==2.32.5
+python-dotenv==1.2.1
+pytest==8.4.2
