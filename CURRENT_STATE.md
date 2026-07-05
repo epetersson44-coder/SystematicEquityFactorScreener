@@ -71,6 +71,13 @@ Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% bac
   doesn't.
 - **Ops guards:** `backtest/preflight.py` (mandatory before any lock), cross-vendor price
   check, complete-row guards in the tracker.
+- **Known modeling conservatisms (deliberate, direction = backtest UNDERSTATES live):**
+  headline sleeve/blend backtests run `cash_rate=0` — the vol-targeted sleeve's idle cash
+  earns nothing in the backtest while the live books sweep it into SGOV at ~T-bill yield
+  (engine supports `cash_rate=`; kept at 0 so all ledger trials share one convention).
+  Expect small positive live-vs-backtest drift in high-rate regimes. The momentum book's
+  backtest is survivorship-flattered the other way — which is why its verdict is assigned
+  to the forward record, not the backtest.
 
 ## Experiment protocol (the ritual — follow it or the ledger lies)
 
