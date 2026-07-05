@@ -97,7 +97,12 @@ industry-wide trend-following death.
   $10k) while eating the full SPY-shaped −47% — the pile thesis as designed. Level
   caveat: NAV smoothing flatters proxy Sharpes; the SIGN of the verdict is the finding.
   (`backtest/experiments/2026-07-04_dotcom_proxy_extension.py`; recorded as an OOS
-  validation, not a ledger candidate — no selection occurred.)
+  validation, not a ledger candidate — no selection occurred.) **Robustness annex (same
+  day, pre-registered at `209ffa8`): PASS without gold, PASS without WTI (the weakest
+  proxy, overlap corr 0.41), and the NAV-smoothing haircut MEASURED at ~0.08 Sharpe via
+  Geltner unsmoothing (blend lag-1 autocorr +0.06; smoothing concentrated in FDIVX) —
+  the verdict stands under all three. Rebuilds vary ~±0.07 Sharpe on panel-construction
+  details: the sign is the finding, the second decimal is noise.**
 - **Ops guards:** `backtest/preflight.py` (mandatory before any lock), cross-vendor price
   check, complete-row guards in the tracker.
 - **Known modeling conservatisms (deliberate, direction = backtest UNDERSTATES live):**
