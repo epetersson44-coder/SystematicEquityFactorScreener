@@ -110,3 +110,32 @@ for core in ["SPY", "EWJ", "EZU"]:
 allp = all(v for pair in verdicts.values() for v in pair)
 print(f"VERDICT: {'ALL FOUR BARS PASS — construction generalizes; US-bias concern closed'
           if allp else 'AT LEAST ONE FAIL — record the dependence in CURRENT_STATE'}")
+
+# RESULTS (run 2026-07-05, unmodified from pre-registration commit 51e56bc):
+#   window 2006-07 -> 2026-07, $10k, net:
+#                        CAGR   Sharpe  maxDD    $10k->
+#   SPY  B&H            11.24%   0.65  -55.2%   $84,161
+#   ssoB-SPY            12.31%   0.69  -56.3%  $101,847
+#   EWJ  B&H             4.40%   0.31  -53.6%   $23,655
+#   ssoB-EWJ             5.05%   0.34  -55.5%   $26,778   bar (a) PASS
+#   blend-EWJ            6.13%   0.73  -16.9%   $32,836   bar (b) PASS
+#   2.3xL-EWJ           10.44%   0.60  -36.9%   $72,845
+#   EZU  B&H             5.28%   0.33  -65.3%   $27,961
+#   ssoB-EZU             5.98%   0.36  -65.1%   $31,953   bar (a) PASS
+#   blend-EZU            6.52%   0.74  -19.5%   $35,324   bar (b) PASS
+#   2.3xL-EZU           11.25%   0.61  -40.4%   $84,289
+#
+# VERDICT: ALL FOUR BARS PASS — the construction is not a US-bull artifact: on a core
+# that went nearly nowhere for two decades (Japan) the same machinery still beats the
+# core on both pile and ride. US-bias concern CLOSED.
+#
+# THE HONEST LESSON INSIDE THE PASS (pre-flagged in the expectation): leverage cannot
+# resurrect a dead core. ssoB's edge over its core shrinks from +1.1%/yr (SPY) to
+# +0.65%/yr (EWJ) — daily-reset decay eats the 3x when the core chops sideways — and
+# on BOTH weak cores the blend construction out-PILES the pile construction
+# (blend-EWJ $32.8k > ssoB-EWJ $26.8k). In a Japanified-US world, ssoB's premise
+# (cheap levered beta worth holding) degrades gracefully to ~core-plus-a-sliver while
+# blend keeps working — which is exactly why the pre-registered tripwire watches the
+# BLEND's excess Sharpe, not ssoB's. The 2.3xL construction is the standout
+# transplant: risk-balanced leverage on the sleeve more than TRIPLES a dead core's
+# terminal wealth (EWJ $23.7k -> $72.8k) at -37% maxDD.
