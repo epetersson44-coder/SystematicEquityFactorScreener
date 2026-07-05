@@ -36,7 +36,8 @@
 # LEDGER: recorded as an out-of-sample VALIDATION, not a candidate trial (no selection
 # happens here; the bar was committed before the run).
 import sys, io, warnings
-sys.path.insert(0, "/Users/erik.petersson/SystematicEquityFactorScreener")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 warnings.filterwarnings("ignore")
 
 import numpy as np

@@ -113,6 +113,10 @@ def block_bootstrap_sharpe_diff(ret_a, ret_b, block=21, n_boot=2000, seed=0):
 # The trial LEDGER: annualized Sharpes of the distinct "can it beat SPY?" constructions this
 # lab actually evaluated over summer 2026, reconstructed from the committed experiments.
 # BLdP's deflation needs exactly this bookkeeping — the survivor must beat the best of THESE.
+# Honest label: a LOWER BOUND on the true trial count, not a census (unrecorded mental
+# trials can't be ledgered) — which is why memo_report also prints DSR at N=50/100.
+# Convention: all entries are rf=0/cash-0 Sharpes for internal comparability; headline
+# CLAIMS use the honest convention (see experiments/2026-07-05_honest_convention.py).
 TRIAL_SHARPES = [
     0.67,   # SMA 50/200 on SPY (Phase 1)
     0.44,   # walk-forward optimized SMA (Phase 2)

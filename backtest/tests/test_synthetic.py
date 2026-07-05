@@ -23,7 +23,8 @@ def test_gbm_panel_structure():
     assert len(close) == 400 and len(open_) == 400
     assert (close > 0).all().all() and (open_ > 0).all().all()
     assert not close.isna().any().any()
-    assert np.allclose(open_.iloc[5], close.iloc[4])        # Open[t] = Close[t-1]
+    assert np.allclose(open_.iloc[5], close.iloc[5])        # Open[t] = Close[t] -> next_open
+    # fills execute one full bar after the decision (real-panel lag; review F7a fix)
 
 
 def test_trending_panel_has_more_autocorrelation():

@@ -34,7 +34,8 @@
 # a sideways core is brutal, and beating a dead core is not the same as being good.
 # LEDGER: OOS validation of frozen constructions — no trial entries.
 import sys, warnings
-sys.path.insert(0, "/Users/erik.petersson/SystematicEquityFactorScreener")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 warnings.filterwarnings("ignore")
 
 import numpy as np

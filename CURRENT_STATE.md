@@ -16,7 +16,7 @@ in `backtest/picks/`, git-committed forward — survivorship-free by constructio
 
 | Book | Construction | Role |
 |---|---|---|
-| `blend` | risk-parity SPY + vol-targeted trend sleeve (SPY/EFA/TLT/IEF/GLD/DBC, 1/3/12-mo TSMOM ensemble), cash in SGOV | the headline: wins the RIDE (Sharpe ~0.94 vs SPY 0.64, maxDD −16% vs −55%, 2006–26, net of costs) |
+| `blend` | risk-parity SPY + vol-targeted trend sleeve (SPY/EFA/TLT/IEF/GLD/DBC, 1/3/12-mo TSMOM ensemble), cash in SGOV | the headline: wins the RIDE. Naive convention (rf=0, cash 0%): Sharpe 0.94 vs SPY 0.65. **HONEST convention (cash at ^IRX, excess Sharpe — the quotable row per SCOREBOARD's own standard): 0.78 vs 0.57, gap +0.22, p(luck) 5.1%**; implementable single-offset book: median 0.78 [0.73, 0.83] — ≈ the tranche ideal. maxDD −16% vs −55%, 2006–26, net |
 | `sso_stack` ("ssoB") | 33% UPRO + 67% × the same trend sleeve, residual SGOV (~167% notional, no margin) | goes for the PILE: beats SPY's raw return in every tested window incl. crisis-free bulls; accepts ~SPY crash depth |
 | `momentum` | S&P 500 12-1 cross-sectional momentum + 200d trend failsafe | kept as the one surviving stock-selection record, for the memo |
 
@@ -34,6 +34,12 @@ done; that subscription is the first legitimate paid-data unlock of the margin e
 changes only at monthly locks, tinker budget zero, pre-committed drawdown protocol in the
 Brain2.0 wiki (`CODE/quant-desk.md`) — depth is never a tripwire, only premise-death is.
 Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% backtest edge).
+**Tax caveat (taxable account):** the sleeve's monthly rotation realizes mostly SHORT-TERM
+gains; at the operator's current bracket (~0–12%, low income) the drag is ≈0–0.3%/yr —
+small but not modeled. It scales with income and capital: at a 24%+ bracket the same
+turnover could consume 0.5–1%/yr of the expected edge. To be MEASURED, not guessed, from
+the realized lock history at each year-end and written here; future new-savings
+contributions should weigh a Roth IRA wrapper, where this line item vanishes.
 
 **Success metrics, pre-committed per book (evaluation horizon 3–5 years — months are
 noise):** `sso_stack` succeeds on the PILE: cumulative raw return ≥ SPY's; drawdowns count
@@ -43,6 +49,16 @@ bulls is by design, not failure). `momentum` is a record, not a bet — its metr
 whether the live edge matches the (survivorship-flattered) backtest at all. Falsifiers =
 the drawdown-protocol tripwires: ~zero excess Sharpe on blend over 5+ live years, or
 industry-wide trend-following death.
+
+**Statistical power of these metrics, measured (2026-07-05, honest convention):** ssoB's
+pile metric is FORMALLY UNDECIDABLE on the pre-committed horizon — edge +1.24%/yr at
+tracking error 6.4%/yr needs ~26 years for even weak (t=1) evidence, ~106 for
+conventional significance; its honest excess-Sharpe gap over SPY is +0.05, p(luck)=0.18
+(statistically nothing, by design — it's mostly beta). Nobody may grade ssoB's edge off
+its live P&L on any horizon we'll act on. What CAN be graded: the blend's excess Sharpe
+(the powered tripwire) and the MECHANISM firing live — in a real equity crisis the
+sleeve must rotate defensive (to cash/havens); a crisis it ends still fully long is
+premise-death regardless of the P&L. One more falsifier added on that basis.
 
 ## RETIRED — negative results, kept as findings (do not "fix", do not re-run as live)
 
@@ -90,8 +106,19 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
 ## The evidence chain (where the proof lives)
 
 - **Trial ledger:** `backtest/significance.py` `TRIAL_SHARPES` — every distinct "can it beat
-  SPY?" construction evaluated (43 as of 2026-07-02). Headline blend: **DSR 0.93** against
-  the best-of-ledger luck hurdle; block-bootstrap P(edge = luck) **1.6%**.
+  SPY?" construction evaluated (45 as of 2026-07-04; honest label: a LOWER BOUND on trials,
+  reconstructed from committed experiments — the N=50/100 paranoia rows in `memo_report`
+  are the mitigation). Naive convention: blend DSR **0.93**, bootstrap P(luck) **1.6%**.
+- **Honest-convention memo (2026-07-05, two-commit pre-registration at `3fb1e82` — F2 of
+  the sixth review, which correctly quoted SCOREBOARD.md's own "the honest one is the
+  truth" back at us):** cash at real ^IRX in the engine + excess-return Sharpes. Blend
+  **0.78 vs SPY 0.57 (gap +0.22)**, bootstrap p(luck) **5.1%** (stable at 63/126d blocks),
+  DSR **0.82** vs the rf=0 ledger hurdle (conservative mix). Survived its pre-registered
+  re-headline rule (gap ≥ +0.15, p ≤ 0.10) — but these honest numbers are the QUOTABLE
+  ones now; the naive row stays for ledger comparability only. Implementable book (single
+  offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
+  the live construction sacrifices ~nothing to the design ideal.
+  (`backtest/experiments/2026-07-05_honest_convention.py`)
 - **Timing luck:** `backtest/timing_luck.py` — all-21-offset sweeps; adopted numbers are
   all-offset medians/tranches, not a lucky calendar day.
 - **Leverage & LETF mechanics:** `backtest/leverage_study.py` — daily-reset simulation with
@@ -119,7 +146,12 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   the exact ssoB/blend constructions transplanted onto Japan (EWJ — a core that went
   ~nowhere for two decades) and the Eurozone (EZU), same global sleeve, US financing
   (conservative). ALL FOUR pre-registered bars PASS: each transplant beats its own core
-  on pile (ssoB) and ride (blend) — the construction is not a US-bull artifact. Honest
+  on pile (ssoB) and ride (blend). Scope, stated honestly (per the sixth review's F5):
+  this closes the CORE-choice bias question — the construction degrades gracefully on
+  weak cores — but it does NOT test the sleeve's own selection-sample dependence (its
+  universe/lookbacks/vol target were chosen on 2006–26 data and it still holds SPY as
+  one of six assets). That residual is covered by the synthetic falsification and,
+  ultimately, the live record — not by this test. Honest
   lesson inside the pass: leverage cannot resurrect a dead core (ssoB's edge over its
   core shrinks +1.1%/yr → +0.65%/yr on Japan; blend out-piles ssoB on weak cores) —
   which is why the tripwire watches the BLEND's excess Sharpe, not ssoB's. The 2.3×L
@@ -127,13 +159,23 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   (`backtest/experiments/2026-07-05_intl_transplant.py`; OOS validation, no ledger entry.)
 - **Ops guards:** `backtest/preflight.py` (mandatory before any lock), cross-vendor price
   check, complete-row guards in the tracker.
-- **Known modeling conservatisms (deliberate, direction = backtest UNDERSTATES live):**
-  headline sleeve/blend backtests run `cash_rate=0` — the vol-targeted sleeve's idle cash
-  earns nothing in the backtest while the live books sweep it into SGOV at ~T-bill yield
-  (engine supports `cash_rate=`; kept at 0 so all ledger trials share one convention).
-  Expect small positive live-vs-backtest drift in high-rate regimes. The momentum book's
-  backtest is survivorship-flattered the other way — which is why its verdict is assigned
-  to the forward record, not the backtest.
+- **Conventions, now MEASURED (supersedes the old "known conservatisms" note):** the
+  cash_rate=0 understatement and the rf=0 flattery were both quantified 2026-07-05 (see
+  the honest-convention memo above): cash credit lifts the blend +0.03 Sharpe; charging
+  rf costs the low-vol blend more than SPY; net honest gap +0.22 vs naive +0.32. Ledger
+  trials remain rf=0/cash-0 for internal comparability — headline claims use the honest
+  row. The momentum book's backtest is survivorship-flattered the other way — which is
+  why its verdict is assigned to the forward record, not the backtest.
+- **Named UNTESTED premise (no honest test exists with free data): the fast inflationary
+  crash.** The sleeve's crisis alpha in 2008/2020 was mostly long duration in a
+  disinflationary regime; 2022 (slow inflationary bear) was survived via cash/commodities.
+  A 1970s-style FAST joint crash — stocks and bonds gapping down together quicker than a
+  1/3/12-month ensemble de-risks, commodities whipsawing — is outside every falsification
+  tool in this repo (synthetics don't generate it; both proxy extensions are
+  disinflationary bears). Published century evidence (Hurst-Ooi-Pedersen) covers the
+  1970s favorably, but with futures shorts we don't have. This is the live blend's real
+  premise risk; it stands alongside the trend-death tripwire and is why the mechanism
+  check (does the sleeve rotate?) is a falsifier in its own right.
 
 ## Experiment protocol (the ritual — follow it or the ledger lies)
 

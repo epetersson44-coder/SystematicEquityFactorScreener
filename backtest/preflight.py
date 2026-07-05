@@ -78,22 +78,36 @@ def stooq_close(symbol="spy.us"):
 
 
 def check_cross_vendor(tolerance=0.01):
-    """SPY close (Yahoo, unadjusted-enough for a same-day check) vs Stooq within 1%.
-    NOTE: Yahoo's auto_adjust rescales history but the LATEST close matches spot, so a
-    same-date comparison is fair. WARN (not FAIL) if Stooq is unreachable."""
-    from backtest.trend_sleeve import etf_panel
+    """EVERY live signal input (6 sleeve ETFs + UPRO) vs Stooq within 1% — a bad print
+    on any single vendor row would otherwise flow straight into a lock (sixth review,
+    F7d; previously SPY-only). NOTE: Yahoo's auto_adjust rescales history but the LATEST
+    close matches spot, so a same-date comparison is fair. WARN (not FAIL) if Stooq is
+    unreachable — it rate-limits; SPY is probed first and failure skips the rest."""
+    from backtest.trend_sleeve import etf_panel, ETFS
     try:
         s_px, s_date = stooq_close("spy.us")
     except Exception as e:                                 # noqa: BLE001
         return None, f"Stooq unreachable ({type(e).__name__}) — cross-check skipped"
-    closes = etf_panel()["Close"]["SPY"].dropna()
-    if s_date not in closes.index:
-        return None, f"no overlapping date (stooq {s_date.date()}) — cross-check skipped"
-    y_px = float(closes.loc[s_date])
-    dev = abs(y_px / s_px - 1)
-    if dev > tolerance:
-        return False, f"VENDOR DISAGREEMENT on SPY {s_date.date()}: yahoo {y_px:.2f} vs stooq {s_px:.2f} ({dev:.2%})"
-    return True, f"cross-vendor OK: SPY {s_date.date()} yahoo {y_px:.2f} vs stooq {s_px:.2f} ({dev:.3%})"
+    closes = etf_panel()["Close"]
+    import yfinance as yf
+    live = yf.download("UPRO", period="5d", progress=False, auto_adjust=True)["Close"]
+    upro = live["UPRO"] if hasattr(live, "columns") else live
+    bad, checked = [], 0
+    for tkr, sym_px in [("SPY", (s_px, s_date))] + [(t, None) for t in ETFS if t != "SPY"] + [("UPRO", None)]:
+        try:
+            px, date = sym_px if sym_px else stooq_close(f"{tkr.lower()}.us")
+        except Exception:                                  # noqa: BLE001
+            continue                                       # symbol-level skip, not a verdict
+        series = upro.dropna() if tkr == "UPRO" else closes[tkr].dropna()
+        if date not in series.index:
+            continue
+        dev = abs(float(series.loc[date]) / px - 1)
+        checked += 1
+        if dev > tolerance:
+            bad.append(f"{tkr} {date.date()}: yahoo {float(series.loc[date]):.2f} vs stooq {px:.2f} ({dev:.2%})")
+    if bad:
+        return False, "VENDOR DISAGREEMENT — " + "; ".join(bad)
+    return True, f"cross-vendor OK: {checked} tickers matched within {tolerance:.0%} (as of {s_date.date()})"
 
 
 def run(refresh=True):

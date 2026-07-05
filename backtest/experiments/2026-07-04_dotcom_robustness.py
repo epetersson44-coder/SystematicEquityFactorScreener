@@ -23,7 +23,8 @@
 #   smoothing; note appended to CURRENT_STATE. Any fail -> the dot-com note gets
 #   qualified with the specific dependence found.
 import sys, io, warnings
-sys.path.insert(0, "/Users/erik.petersson/SystematicEquityFactorScreener")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 warnings.filterwarnings("ignore")
 
 import numpy as np

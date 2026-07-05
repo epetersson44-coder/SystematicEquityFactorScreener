@@ -41,11 +41,14 @@ def _real_moments():
 
 def _to_panels(rets_df):
     """Turn a synthetic daily-returns frame into {'Close','Open'} price panels.
-    Open[t] = Close[t-1] (fills happen at the prior close's level — neutral, and the
-    look-ahead structure of run_xs is unchanged)."""
+    Open[t] = Close[t]: a next_open fill scheduled at bar t executes at Close[t+1],
+    one full bar after the decision — matching the real panel's signal-to-fill lag.
+    (The original Open[t] = Close[t-1] made next-open fills execute at the DECISION
+    bar's own close — zero lag, which mildly flattered the positive control; caught
+    by the sixth external review, F7a. The null verdict is lag-independent: iid has
+    nothing to time at any lag.)"""
     close = 100.0 * (1.0 + rets_df).cumprod()
-    open_ = close.shift(1).fillna(100.0)
-    return {"Close": close, "Open": open_}
+    return {"Close": close, "Open": close.copy()}
 
 
 def gbm_panel(mu, cov, n_days=N_DAYS, seed=0):
