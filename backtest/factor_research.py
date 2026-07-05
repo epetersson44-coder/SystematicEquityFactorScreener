@@ -101,7 +101,15 @@ def standalone_ic(ranked):
 def fama_macbeth(ranked, min_names=20):
     """Cross-sectional FM regression: each rebalance, OLS forward-rank ~ all 8 factor ranks
     (missing ranks filled at 0.5 = neutral, so a sparse factor doesn't shrink the sample).
-    Returns {factor: (mean_coef, FM_t_stat)} + n_periods. The coef is incremental signal."""
+    Returns {factor: (mean_coef, FM_t_stat)} + n_periods. The coef is incremental signal.
+
+    CAVEAT (seventh external review, 2026-07-05): fill-at-0.5 on PERCENTILE ranks equals
+    mean-imputation (rank means are ~0.5 by construction) — standard, but missingness here
+    is INFORMATIVE (names lacking 2yr priors skew young/distressed), so sparse-factor coefs
+    are estimated on a survivor-tilted subsample. Treat sparse-factor FM t-stats (esp.
+    net_issuance, asset_growth) as optimistic. No live decision rests on this file — the
+    screener's zero-edge retirement came from the TRADED edgar_backtest, not these t-stats;
+    a complete-case sensitivity is the upgrade if this research is ever revived."""
     cols = [f + "_r" for f in FACTORS]
     coefs = []
     for _, g in ranked.groupby("date"):

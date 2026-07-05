@@ -173,7 +173,11 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   rf costs the low-vol blend more than SPY; net honest gap +0.22 vs naive +0.32. Ledger
   trials remain rf=0/cash-0 for internal comparability — headline claims use the honest
   row. The momentum book's backtest is survivorship-flattered the other way — which is
-  why its verdict is assigned to the forward record, not the backtest.
+  why its verdict is assigned to the forward record, not the backtest. LETF financing
+  spread sensitivity (asked by three reviewers, answered analytically): ssoB's edge moves
+  by w_eq×(L−1) = 0.67 × any spread change — a stress +60bps over the modeled 40bps costs
+  ~0.4%/yr; the realized average is bounded by the SSO/UPRO validation (tracking gap
+  −0.3/−0.6%/yr including 2008/2020).
 - **Named UNTESTED premise (no honest test exists with free data): the fast inflationary
   crash.** The sleeve's crisis alpha in 2008/2020 was mostly long duration in a
   disinflationary regime; 2022 (slow inflationary bear) was survived via cash/commodities.
@@ -192,7 +196,8 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
    `backtest/experiments/` (dated filename) so the evidence outlives the session. When
    feasible, commit the header (hypothesis + bar) BEFORE the run and the results in a
    second commit — the git hash chain then *proves* the bar predated the outcome instead
-   of asserting it. No bar, no run.
+   of asserting it, and `python -m backtest.verify_prereg` machine-checks every claim
+   (currently: 6 verified, 0 failed). No bar, no run.
 2. **Control timing luck:** anything cadence-sensitive runs all 21 offsets; compare
    distributions, not single curves.
 3. **Ledger in the same commit:** every trial's full-cycle annualized Sharpe is appended to
