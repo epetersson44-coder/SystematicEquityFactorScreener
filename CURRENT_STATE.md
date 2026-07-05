@@ -21,7 +21,13 @@ in `backtest/picks/`, git-committed forward — survivorship-free by constructio
 | `momentum` | S&P 500 12-1 cross-sectional momentum + 200d trend failsafe | kept as the one surviving stock-selection record, for the memo |
 
 Watch-only: `shadow` — the 2.3× levered blend derived from the same locks (the ~$110k
-portfolio-margin era construction). Never presented as tradeable today.
+portfolio-margin era construction). Never presented as tradeable today. **Open design
+question, deferred to that era's first lock: tail management at 2.3× (synthetic tails
+−70%+). Known dials, cheapest first: size 1.8–2.0× (synthetic median maxDD mid-30s, per
+`leverage_study.py`), vol-target the leverage (dynamic L ≤ 2.3), the banked DBMF slice.
+A real put/collar overlay study requires REAL options data (OptionMetrics/ORATS-class,
+paid) — simulating option prices from VIX rules-of-thumb is fabrication and will not be
+done; that subscription is the first legitimate paid-data unlock of the margin era.**
 
 **Real money:** from 2026-07-13 the ssoB construction runs in a real ~$8k account
 (substitutions SPLG/IAU/PDBC; order sheets only via `tracker.shopping_list()`). Terms:
@@ -109,6 +115,16 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   Geltner unsmoothing (blend lag-1 autocorr +0.06; smoothing concentrated in FDIVX) —
   the verdict stands under all three. Rebuilds vary ~±0.07 Sharpe on panel-construction
   details: the sign is the finding, the second decimal is noise.**
+- **International transplant (2026-07-05, two-commit pre-registration at `51e56bc`):**
+  the exact ssoB/blend constructions transplanted onto Japan (EWJ — a core that went
+  ~nowhere for two decades) and the Eurozone (EZU), same global sleeve, US financing
+  (conservative). ALL FOUR pre-registered bars PASS: each transplant beats its own core
+  on pile (ssoB) and ride (blend) — the construction is not a US-bull artifact. Honest
+  lesson inside the pass: leverage cannot resurrect a dead core (ssoB's edge over its
+  core shrinks +1.1%/yr → +0.65%/yr on Japan; blend out-piles ssoB on weak cores) —
+  which is why the tripwire watches the BLEND's excess Sharpe, not ssoB's. The 2.3×L
+  transplant tripled the dead cores' terminals at −37/−40% maxDD.
+  (`backtest/experiments/2026-07-05_intl_transplant.py`; OOS validation, no ledger entry.)
 - **Ops guards:** `backtest/preflight.py` (mandatory before any lock), cross-vendor price
   check, complete-row guards in the tracker.
 - **Known modeling conservatisms (deliberate, direction = backtest UNDERSTATES live):**
