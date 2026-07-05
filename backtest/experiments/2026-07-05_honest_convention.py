@@ -172,3 +172,23 @@ print(f"honest gap {gap_h:+.3f} (rule: >= +0.15)   p(luck) {bb21['p_value_luck']
       f"(rule: <= 0.10)")
 print("RETRACT & RE-STATE HEADLINE" if fail else
       "HEADLINE SURVIVES the honest convention — gains a measured honest row")
+
+# RESULTS (run 2026-07-05, unmodified from pre-registration commit 3fb1e82):
+#   HEADLINE (tranche): raw rf=0 blend 0.972 vs SPY 0.648 (gap +0.324; cash credit
+#     alone lifted the blend 0.943->0.972) | HONEST EXCESS blend 0.783 vs SPY 0.566
+#     (gap +0.217). Bootstrap p(luck): 0.051 / 0.052 / 0.057 at 21/63/126d blocks —
+#     stable across block lengths, honest-weaker than the naive 1.6%. DSR 0.82 under
+#     the conservative mixed convention (honest numerator, rf=0 ledger hurdle).
+#   VERDICT vs pre-registered rule (gap >= +0.15, p <= 0.10): HEADLINE SURVIVES.
+#     Consequence per the rule: the honest row is displayed alongside the naive one
+#     everywhere, and honest-excess numbers are the quotable ones going forward.
+#   IMPLEMENTABLE BOOK (single offset, expanding RP, monthly mix @10bps): median
+#     honest excess Sharpe 0.779 [0.727, 0.829] — statistically indistinguishable
+#     from the tranche ideal. The live construction sacrifices ~nothing; F4's worry
+#     about the tranche-vs-implementable gap is MEASURED and small.
+#   ssoB SIGNIFICANCE PAGE: honest excess 0.616 vs SPY 0.566; bootstrap diff +0.050,
+#     CI [-0.057,+0.150], p(luck) 0.18 — statistically NOTHING, as expected. Raw edge
+#     +1.24%/yr at TE 6.40%/yr -> 26.5 years for t=1, 106 years for t=2. The
+#     reviewer's ~27-year estimate confirmed. THE PILE METRIC IS FORMALLY UNDECIDABLE
+#     on any pre-committed horizon; the powered falsifier is the blend tripwire and
+#     the live mechanism checks (does the sleeve rotate in a real crisis).
