@@ -85,7 +85,13 @@ def run_short_screen(source="simfin", tickers=None, min_cap=MIN_CAP, max_cap=MAX
       (3) manipulation               — HIGH Beneish M scores high.
     Top of the ranking = most attractive shorts. The band + sector filters still apply
     (same investable small-cap, ex-financials universe) — only the distress/manipulation
-    SCRUB is removed. Equal leg weights are a v1 choice; tune later if warranted."""
+    SCRUB is removed. Equal leg weights are a v1 choice; tune later if warranted.
+
+    Sector-neutrality is deliberately ASYMMETRIC across the legs: the factor-composite
+    leg is sector-neutral, but the distress and manipulation legs rank across the WHOLE
+    universe — a near-bankrupt or manipulated name is a short candidate regardless of
+    how its sector peers look. Net effect: the short book can carry sector tilts toward
+    distressed sectors by design (it did historically: energy, retail)."""
     if tickers is None:
         tickers = simfin_universe() if source == "simfin" else None
     rows = []

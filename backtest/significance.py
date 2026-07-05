@@ -167,6 +167,10 @@ TRIAL_SHARPES = [
     # banked as the best-seen ride-vs-pile option: maxDD -29% vs -56% at a near-tie terminal):
     0.81,   # UPRO->SPY below 200d SMA, checked at monthly locks (bulls 12.1%/21.3% vs SPY 13.1%/23.1%)
     0.81,   # same, daily-checked (Gayed cadence: 113 switches vs 31, worse terminal, same Sharpe)
+    # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
+    # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
+    # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs
+    # -47.5%, PASSED. Validations of a frozen construction don't inflate the DSR hurdle.
 ]
 
 

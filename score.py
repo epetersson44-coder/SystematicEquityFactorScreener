@@ -19,6 +19,11 @@ def build_factor_table(tickers, source="yfinance"):
 def score(df, sector_neutral=False):
     """Percentile-rank each factor and combine into a composite (higher = better).
 
+    The composite weights exactly the factors in config.WEIGHTS — five value/quality/
+    leverage factors, equal-weighted. The Piotroski F-Score is NOT among them (dropped
+    as window-overfit; see the note above config.WEIGHTS): callers may compute an fscore
+    column for reference, but it never enters this composite.
+
     sector_neutral=True ranks each factor WITHIN its sector (needs a 'sector' column),
     so a name is judged against its sector peers, not the whole universe. This removes
     accidental sector BETS — the screen picks the best in each sector instead of dumping

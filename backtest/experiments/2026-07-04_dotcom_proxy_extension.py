@@ -145,3 +145,18 @@ print(f"  (b) blend bear maxDD {rows['blend (proxy)'][4]*100:.1f}% shallower tha
 print(f"  => claim {'STANDS unqualified' if a_pass and b_pass else 'gets QUALIFIED to since-2007'}")
 print(f"  secondary: ssoB-sim ${ssob_eq.iloc[-1]/ssob_eq[ssob_eq.index >= REPORT_START].iloc[0]*10:,.2f}k "
       f"vs SPY ${spy_px.iloc[-1]/spy_px[spy_px.index >= REPORT_START].iloc[0]*10:,.2f}k per $10k over extension")
+
+# RESULTS (run 2026-07-04, unmodified from the pre-registration commit 2f2bf84):
+#   proxy validation (2006+ overlap): FDIVX~EFA 0.97, VUSTX~TLT 0.98, VFITX~IEF 0.95,
+#     GC=F~GLD 0.89, WTI~DBC 0.41 (WTI overlap stat contaminated by Apr-2020 negative
+#     prices; inverse-vol sizing inside the sleeve contains it by construction)
+#   1999-07 -> 2006-06:            CAGR    Sharpe   maxDD   | bear CAGR   bear maxDD
+#     SPY                           0.34%   0.11    -47.5%  |  -22.4%      -47.5%
+#     sleeve (proxy)                9.51%   1.39     -9.7%  |   +7.9%       -5.5%
+#     blend (proxy)                 7.27%   0.97     -9.4%  |   -1.0%       -9.4%
+#     ssoB-sim (proxy)              2.53%   0.23    -47.2%  |  -22.2%      -47.2%
+#   VERDICT: (a) PASS, (b) PASS -> the beat-SPY claim STANDS unqualified; it now spans
+#   the dot-com bear as well as 2008/2020/2022. ssoB-sim beat SPY over the extension
+#   ($11.9k vs $10.2k per $10k) while eating the full SPY-shaped -47% — the pile thesis
+#   exactly as designed. Level caveat: mutual-fund NAV smoothing flatters proxy Sharpes
+#   (vol ratios 0.70-0.91); the SIGN of the verdict is the finding, not the 1.39.

@@ -29,6 +29,15 @@ changes only at monthly locks, tinker budget zero, pre-committed drawdown protoc
 Brain2.0 wiki (`CODE/quant-desk.md`) — depth is never a tripwire, only premise-death is.
 Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% backtest edge).
 
+**Success metrics, pre-committed per book (evaluation horizon 3–5 years — months are
+noise):** `sso_stack` succeeds on the PILE: cumulative raw return ≥ SPY's; drawdowns count
+against it only if materially deeper than SPY's (that depth is the accepted price, not the
+metric). `blend` succeeds on the RIDE: Sharpe/maxDD vs SPY (trailing SPY's raw return in
+bulls is by design, not failure). `momentum` is a record, not a bet — its metric is
+whether the live edge matches the (survivorship-flattered) backtest at all. Falsifiers =
+the drawdown-protocol tripwires: ~zero excess Sharpe on blend over 5+ live years, or
+industry-wide trend-following death.
+
 ## RETIRED — negative results, kept as findings (do not "fix", do not re-run as live)
 
 - **`factor` (the original small-cap value screener** — the repo's namesake): **zero edge**,
@@ -69,6 +78,16 @@ Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% bac
   ~zero minus costs (no machinery bias); AR-drift markets: strong positive; block-bootstrap
   real-correlation markets: wash. The system finds trend when it exists and nothing when it
   doesn't.
+- **Dot-com extension (2026-07-04, two-commit pre-registration — bar committed at
+  `2f2bf84` BEFORE the run):** proxy panel (VUSTX/VFITX/FDIVX/GC=F/WTI-spot, each
+  validated on the 2006+ overlap) extends the exact construction through 1999–2006.
+  Blend: Sharpe 0.97 vs SPY 0.11, dot-com-bear maxDD −9.4% vs −47.5% — PASSED both
+  pre-registered conditions, so the beat-SPY claim spans the 2000–02 bear as well as
+  2008/2020/2022. ssoB-sim beat SPY over the lost half-decade too ($11.9k vs $10.2k per
+  $10k) while eating the full SPY-shaped −47% — the pile thesis as designed. Level
+  caveat: NAV smoothing flatters proxy Sharpes; the SIGN of the verdict is the finding.
+  (`backtest/experiments/2026-07-04_dotcom_proxy_extension.py`; recorded as an OOS
+  validation, not a ledger candidate — no selection occurred.)
 - **Ops guards:** `backtest/preflight.py` (mandatory before any lock), cross-vendor price
   check, complete-row guards in the tracker.
 - **Known modeling conservatisms (deliberate, direction = backtest UNDERSTATES live):**
@@ -83,8 +102,10 @@ Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% bac
 
 1. **Pre-specify before running:** hypothesis, exact construction, and the adoption bar,
    written in the experiment script's header — and the script is committed under
-   `backtest/experiments/` (dated filename) so the evidence outlives the session. No bar,
-   no run.
+   `backtest/experiments/` (dated filename) so the evidence outlives the session. When
+   feasible, commit the header (hypothesis + bar) BEFORE the run and the results in a
+   second commit — the git hash chain then *proves* the bar predated the outcome instead
+   of asserting it. No bar, no run.
 2. **Control timing luck:** anything cadence-sensitive runs all 21 offsets; compare
    distributions, not single curves.
 3. **Ledger in the same commit:** every trial's full-cycle annualized Sharpe is appended to
