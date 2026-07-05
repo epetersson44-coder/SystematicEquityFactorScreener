@@ -49,6 +49,12 @@ Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% bac
   — survivor-selected asset. The trend-gating design argument stands alone; design call only.
 - **Yang-Zhang OHLC vol estimator** (`backtest/volatility.py`): wash at monthly cadence.
 - **BIL excess-return hurdle** (`hurdle_col`): wash.
+- **ssoB defensive step-down** (equity leg UPRO→SPY when SPY < 200d SMA, checked at the
+  monthly lock; `backtest/experiments/2026-07-04_ssoB_defensive.py`): halves the max
+  drawdown (−29% vs −56%) at a near-tie in full-cycle terminal wealth, but loses BOTH bull
+  windows to SPY itself (12.1% vs 13.1%, 21.3% vs 23.1%) — fails this book's beat-SPY-raw
+  thesis, so not adopted. Recorded as the best-seen ride-vs-pile trade if that preference
+  ever flips; that's a design call at a lock, not a backtest call.
 
 ## The evidence chain (where the proof lives)
 
@@ -69,8 +75,9 @@ Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% bac
 ## Experiment protocol (the ritual — follow it or the ledger lies)
 
 1. **Pre-specify before running:** hypothesis, exact construction, and the adoption bar,
-   written in the experiment script's header (pattern: the A–E sso_stack round; the
-   two-survivors sweep). No bar, no run.
+   written in the experiment script's header — and the script is committed under
+   `backtest/experiments/` (dated filename) so the evidence outlives the session. No bar,
+   no run.
 2. **Control timing luck:** anything cadence-sensitive runs all 21 offsets; compare
    distributions, not single curves.
 3. **Ledger in the same commit:** every trial's full-cycle annualized Sharpe is appended to

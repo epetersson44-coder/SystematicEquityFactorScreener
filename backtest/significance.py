@@ -162,6 +162,11 @@ TRIAL_SHARPES = [
             # ~+2.3%/yr is beta rental of the decade's best asset found ex post; the design
             # argument (trend-gated 3.5% slot, self-liquidated in both -70% winters) stands
             # on its own and is a structural call, not a backtest call)
+    # ssoB defensive step-down (2026-07-04, Codex-proposed; experiments/2026-07-04_ssoB_defensive.py;
+    # pre-registered bar: beat SPY in BOTH bulls AND baseline terminal wealth — FAILED both;
+    # banked as the best-seen ride-vs-pile option: maxDD -29% vs -56% at a near-tie terminal):
+    0.81,   # UPRO->SPY below 200d SMA, checked at monthly locks (bulls 12.1%/21.3% vs SPY 13.1%/23.1%)
+    0.81,   # same, daily-checked (Gayed cadence: 113 switches vs 31, worse terminal, same Sharpe)
 ]
 
 
