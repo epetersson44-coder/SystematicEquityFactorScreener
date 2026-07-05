@@ -111,3 +111,19 @@ print(f"  blend Sharpe raw {stats(blends['full (committed)'])[0]:.2f} -> "
 print(f"\nVERDICT: bars (a) {'PASS' if results['no-gold'] else 'FAIL'}  "
       f"(b) {'PASS' if results['no-WTI'] else 'FAIL'}  "
       f"(c) {'PASS' if sr_u > spy_sr else 'FAIL'}")
+
+# RESULTS (run 2026-07-04, unmodified from pre-registration commit 209ffa8):
+#   SPY reference: ext Sharpe 0.11, bear maxDD -47.5%
+#   full (committed)  blend Sharpe 1.04  bear maxDD  -7.6%  PASS
+#   no-gold           blend Sharpe 0.94  bear maxDD  -8.6%  PASS
+#   no-WTI            blend Sharpe 0.99  bear maxDD  -7.2%  PASS
+#   NAV smoothing: blend lag-1 autocorr +0.063; proxy autocorrs FDIVX +0.178 (real
+#     smoothing, small slice), VUSTX +0.005 / VFITX +0.011 (treasuries mark liquid
+#     paper — essentially unsmoothed). Geltner bound: 1.04 -> 0.96, far above SPY 0.11.
+#     The reviewer's guessed 0.2-0.3 Sharpe haircut was ~3x too big; measured ~0.08.
+#   VERDICT: (a) PASS (b) PASS (c) PASS — the dot-com verdict survives its weakest
+#   proxy, its weakest coverage, and a conservative unsmoothing bound.
+#   Honesty note: this rebuild shows full-variant Sharpe 1.04 vs the original run's
+#   0.97 — ~±0.07 construction sensitivity from panel row-grid details (which calendar
+#   days survive the join). Reinforces the standing caveat: the SIGN is the finding,
+#   the second decimal is noise.
