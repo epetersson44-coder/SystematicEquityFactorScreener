@@ -429,6 +429,27 @@ def test_cash_rate_credits_idle_cash():
     assert 0.048 < (earn.iloc[-1] / earn.iloc[0] - 1) < 0.053      # ~5% earned on idle cash
 
 
+def test_cash_rate_accepts_time_varying_series():
+    # Series path (the honest ^IRX convention): a constant series must match the scalar
+    # path exactly; a 0%-then-10% step must land near the flat-5% outcome over the year.
+    dates = pd.date_range("2020-01-01", periods=253, freq="D")
+    px = pd.DataFrame({"X": [100.0] * 253}, index=dates)
+    panel = {"Close": px, "Open": px}
+
+    class NeverInvest(CrossSectionalStrategy):
+        def target_weights(self, closes, i):
+            return None
+
+    scalar = run_xs(panel, NeverInvest(), fill="next_open", cash_rate=0.05)
+    series = run_xs(panel, NeverInvest(), fill="next_open",
+                    cash_rate=pd.Series(0.05, index=dates))
+    assert abs(series.iloc[-1] / scalar.iloc[-1] - 1) < 1e-9
+
+    step = pd.Series([0.0] * 126 + [0.10] * 127, index=dates)
+    stepped = run_xs(panel, NeverInvest(), fill="next_open", cash_rate=step)
+    assert 0.045 < (stepped.iloc[-1] / stepped.iloc[0] - 1) < 0.055
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

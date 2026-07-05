@@ -160,7 +160,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
         weights summing to <= leverage. financing_bps: annual interest (bps) on borrowed cash
         (charged daily on negative cash) — leverage isn't free.
     cash_rate: annual risk-free rate earned on POSITIVE idle cash (charged daily; the
-        cross-sectional twin of engine.run(cash_rate=)). Default 0 understates cash-heavy
+        cross-sectional twin of engine.run(cash_rate=)). Accepts a float OR a pd.Series
+        of annualized rates indexed by date (e.g. ^IRX via tbill_series) for the honest
+        time-varying convention. Default 0 understates cash-heavy
         strategies (a trend sleeve that parks in cash should earn T-bills) — pass the same rf
         you use in metrics.sharpe() for a consistent number. Mutually exclusive with financing
         (cash is either positive→earns, or negative→pays).
@@ -172,7 +174,13 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
     pf = MultiPortfolio(initial_capital, allow_short=allow_short, gross_max=eff_gross)
     daily_borrow = (borrow_bps / 10_000.0) / TRADING_DAYS if borrow_bps else 0.0
     daily_fin = (financing_bps / 10_000.0) / TRADING_DAYS if financing_bps else 0.0
-    daily_cash = (cash_rate / TRADING_DAYS) if cash_rate else 0.0
+    if isinstance(cash_rate, pd.Series):
+        # time-varying annualized rf (e.g. ^IRX): align to the panel, ffill gaps, /252
+        cash_series = (cash_rate.reindex(dates).ffill().fillna(0.0) / TRADING_DAYS).to_numpy()
+        daily_cash = None
+    else:
+        cash_series = None
+        daily_cash = (cash_rate / TRADING_DAYS) if cash_rate else 0.0
     equity = np.empty(n)
     pending = None
 
@@ -196,8 +204,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
             pf.accrue_borrow(closes.iloc[i], daily_borrow)  # holding cost on shorts, on today's book
         if daily_fin and pf.cash < 0:
             pf.cash += pf.cash * daily_fin                  # interest on borrowed cash (cash < 0)
-        if daily_cash and pf.cash > 0:
-            pf.cash *= 1 + daily_cash                        # idle positive cash earns the rf rate
+        rate_today = cash_series[i] if cash_series is not None else daily_cash
+        if rate_today and pf.cash > 0:
+            pf.cash *= 1 + rate_today                        # idle positive cash earns the rf rate
         equity[i] = pf.equity(closes.iloc[i])              # mark at today's close
 
     return pd.Series(equity, index=dates, name="equity")
