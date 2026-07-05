@@ -96,6 +96,14 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   — survivor-selected asset. The trend-gating design argument stands alone; design call only.
 - **Yang-Zhang OHLC vol estimator** (`backtest/volatility.py`): wash at monthly cadence.
 - **BIL excess-return hurdle** (`hurdle_col`): wash.
+- **Dual-momentum sleeve (DMOM top-3)** — TS gate + hard cross-sectional top-3 selection
+  (Antonacci family; the sleeve's strength-weighting is already the soft version). Met
+  the full in-sample dominance bar (blend honest exSharpe 0.803 vs 0.768, all 21
+  offsets) then **FAILED the pre-registered OOS check** on the 1999–2006 proxy panel
+  (0.986 vs 1.018, deeper DD): in long many-assets-trending regimes, dropping the
+  weakest trender discards real diversification. Banked as in-sample-only dominance —
+  the two-stage gate caught a would-be adoption artifact. Top-2 failed in-sample
+  outright. (`backtest/experiments/2026-07-05_dual_momentum_sleeve.py` + `_dmom_robustness.py`)
 - **ssoB defensive step-down** (equity leg UPRO→SPY when SPY < 200d SMA, checked at the
   monthly lock; `backtest/experiments/2026-07-04_ssoB_defensive.py`): halves the max
   drawdown (−29% vs −56%) at a near-tie in full-cycle terminal wealth, but loses BOTH bull

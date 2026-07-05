@@ -138,3 +138,16 @@ for name in ("DMOM top-3", "DMOM top-2"):
           and df.blend_exs.min() >= base.blend_exs.min()
           and df.blend_dd.median() >= base.blend_dd.median())
     print(f"  {name}: {'ADOPT bar MET' if ok else 'FAIL -> ledger + close/bank'}")
+
+# RESULTS (run 2026-07-05, unmodified from pre-registration f048580; honest convention):
+#   baseline (hold-all)  blend exSharpe med 0.768 [0.719,0.820]  maxDD med -16.8%
+#   DMOM top-3           blend exSharpe med 0.803 [0.731,0.844]  maxDD med -16.6%  BAR MET
+#   DMOM top-2           blend exSharpe med 0.807 [0.690,0.872]  maxDD med -19.5%  FAIL
+#   The pre-run expectation (fails on breadth) was WRONG for top-3 in-sample — the
+#   protocol exists precisely to catch the author being wrong in either direction.
+# ARC CONCLUSION: the OOS annex (2026-07-05_dmom_robustness.py, pre-reg ff5279e) then
+#   FAILED top-3 on the 1999-2006 proxy panel (med 0.986 vs 1.018, maxDD -11.7% vs
+#   -9.1%) — in the one regime where many assets trend for years (oil/gold/bonds
+#   2001-06), concentration bites, exactly where the sleeve earns its keep. VERDICT:
+#   in-sample-only dominance -> BANKED, live sleeve unchanged. Had adoption happened
+#   on the first bar alone, a 2006-26 artifact would have shipped into the live book.

@@ -125,3 +125,10 @@ ok = (d.blend_s.median() > b.blend_s.median() and d.blend_s.min() >= b.blend_s.m
       and d.blend_dd.median() >= b.blend_dd.median())
 print(f"\nVERDICT: {'PASS — top-3 is an ADOPTION CANDIDATE for the July-13 lock (Erik decides)'
       if ok else 'FAIL — BANKED as in-sample-only; live sleeve unchanged'}")
+
+# RESULTS (run 2026-07-05, unmodified from pre-registration ff5279e):
+#   hold-all    blend Sharpe med 1.018 [0.885,1.088]  maxDD med  -9.1%
+#   DMOM top-3  blend Sharpe med 0.986 [0.915,1.100]  maxDD med -11.7%
+#   VERDICT: FAIL (median lower AND maxDD deeper) -> BANKED as in-sample-only.
+#   Mechanism note: 1999-2006 is a many-assets-trending regime — dropping the
+#   "weakest" trender discarded real diversification exactly when it mattered.

@@ -171,6 +171,12 @@ TRIAL_SHARPES = [
     # banked as the best-seen ride-vs-pile option: maxDD -29% vs -56% at a near-tie terminal):
     0.81,   # UPRO->SPY below 200d SMA, checked at monthly locks (bulls 12.1%/21.3% vs SPY 13.1%/23.1%)
     0.81,   # same, daily-checked (Gayed cadence: 113 switches vs 31, worse terminal, same Sharpe)
+    # Dual-momentum sleeve (2026-07-05, Erik's DMOM idea; honest-excess blend medians,
+    # convention labeled — experiments/2026-07-05_dual_momentum_sleeve.py + _dmom_robustness.py):
+    0.80,   # DMOM top-3: TS gate + CS top-3 — met the in-sample bar (0.803 vs 0.768) but
+            # FAILED the pre-registered OOS check on 1999-2006 (0.986 vs 1.018, deeper DD)
+            # -> BANKED as in-sample-only; the OOS gate caught a would-be adoption artifact
+    0.81,   # DMOM top-2: failed in-sample (worst offset 0.690, maxDD -19.5%) — concentration
     # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
     # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
     # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs
