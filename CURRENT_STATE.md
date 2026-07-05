@@ -49,6 +49,16 @@ industry-wide trend-following death.
 - **Pairs trading** — negative OOS (Sharpe −0.55, 2020–26).
 - **Macro/yield-curve regime switching, carry (free-data version), stop-loss overlays,
   faster-than-monthly cadence, small-cap anything** — tested, closed. See the trial ledger.
+- **Volatility risk premium / VIX term structure (2026-07-04)** — closed WITHOUT a run, by
+  operator decision on implementability + instrument tail: the only cash-account-holdable
+  short-vol instrument (SVXY) lost ~90% in one day (Feb 2018), and that tail class is
+  outside what the operator will ever hold with real money; short-vol is also
+  crash-correlated (equity beta in disguise) in a book that already carries full equity
+  beta. Recorded as a design verdict, not a backtest verdict — no ledger entry. (An
+  external reviewer's proposed backtest for this family was rejected separately for
+  fabricated pre-2009 data, a degenerate VXX/VXZ price-ratio signal, and cash-account
+  shorting; the honest design — ^VIX/^VIX3M signal, long-only SVXY/VIXM, 2011+ — is
+  documented here in case the implementability constraint ever changes.)
 
 ## BANKED — tested, not adopted; structural options awaiting a decision at a lock
 
