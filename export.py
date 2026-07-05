@@ -102,12 +102,22 @@ def add_methodology_tab(wb):
     ws.column_dimensions["D"].width = 40
 
     # Title
-    ws["A1"] = "Systematic Equity Factor Screener — Methodology"
+    ws["A1"] = "Systematic Equity Factor Screener — Methodology [RETIRED RESEARCH]"
     ws["A1"].font = Font(name="Arial", bold=True, size=14, color=WHITE)
     ws["A1"].fill = make_fill(DARK_BLUE)
     ws["A1"].alignment = Alignment(horizontal="left", vertical="center")
     ws.row_dimensions[1].height = 28
     ws.merge_cells("A1:D1")
+
+    # Retired banner — this screen is a preserved NEGATIVE result, not a live signal
+    ws["A2"] = ("RETIRED (2026-06): a survivorship-free point-in-time backtest found ZERO edge "
+                "in this composite. Kept as a frozen research record — the scores below are not "
+                "investment signals. See CURRENT_STATE.md.")
+    ws["A2"].font = Font(name="Arial", bold=True, size=10, color=WHITE)
+    ws["A2"].fill = make_fill("9C0006")
+    ws["A2"].alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+    ws.row_dimensions[2].height = 30
+    ws.merge_cells("A2:D2")
 
     # Overview
     ws["A3"] = "Overview"

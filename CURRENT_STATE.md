@@ -40,16 +40,22 @@ industry-wide trend-following death.
 
 ## RETIRED — negative results, kept as findings (do not "fix", do not re-run as live)
 
+*Each closed item is tagged: **[EMPIRICAL]** = the math said no (a backtest verdict, in the
+ledger) vs **[POLICY]** = the operator said no (implementability / tail tolerance — a design
+decision that could legitimately be revisited if the constraint changes). Do not re-litigate
+a POLICY closure as if it were refuted statistically, or vice versa.*
+
 - **`factor` (the original small-cap value screener** — the repo's namesake): **zero edge**,
   proven by a survivorship-free point-in-time EDGAR backtest (`backtest/edgar_backtest.py`,
   `backtest/factor_backtest.py`) after fixing an inverted scorer. The composite's IC ≈ 0; the
   F-Score weight was window-overfit and dropped. The rigor is the deliverable. Its frozen
-  paper book still `report`s monthly; no new locks.
-- **`factor_ls`** — weak long-short variant. Frozen likewise.
-- **Pairs trading** — negative OOS (Sharpe −0.55, 2020–26).
+  paper book still `report`s monthly; no new locks. [EMPIRICAL]
+- **`factor_ls`** — weak long-short variant. Frozen likewise. [EMPIRICAL]
+- **Pairs trading** — negative OOS (Sharpe −0.55, 2020–26). [EMPIRICAL]
 - **Macro/yield-curve regime switching, carry (free-data version), stop-loss overlays,
   faster-than-monthly cadence, small-cap anything** — tested, closed. See the trial ledger.
-- **Volatility risk premium / VIX term structure (2026-07-04)** — closed WITHOUT a run, by
+  [EMPIRICAL]
+- **Volatility risk premium / VIX term structure (2026-07-04)** [POLICY] — closed WITHOUT a run, by
   operator decision on implementability + instrument tail: the only cash-account-holdable
   short-vol instrument (SVXY) lost ~90% in one day (Feb 2018), and that tail class is
   outside what the operator will ever hold with real money; short-vol is also
@@ -92,8 +98,8 @@ industry-wide trend-following death.
   `2f2bf84` BEFORE the run):** proxy panel (VUSTX/VFITX/FDIVX/GC=F/WTI-spot, each
   validated on the 2006+ overlap) extends the exact construction through 1999–2006.
   Blend: Sharpe 0.97 vs SPY 0.11, dot-com-bear maxDD −9.4% vs −47.5% — PASSED both
-  pre-registered conditions, so the beat-SPY claim spans the 2000–02 bear as well as
-  2008/2020/2022. ssoB-sim beat SPY over the lost half-decade too ($11.9k vs $10.2k per
+  pre-registered conditions, so the blend's RIDE claim (Sharpe/maxDD dominance — its
+  pinned metric, not raw return) spans the 2000–02 bear as well as 2008/2020/2022. ssoB-sim beat SPY over the lost half-decade too ($11.9k vs $10.2k per
   $10k) while eating the full SPY-shaped −47% — the pile thesis as designed. Level
   caveat: NAV smoothing flatters proxy Sharpes; the SIGN of the verdict is the finding.
   (`backtest/experiments/2026-07-04_dotcom_proxy_extension.py`; recorded as an OOS
