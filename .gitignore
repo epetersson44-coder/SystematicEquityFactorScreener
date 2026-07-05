@@ -10,3 +10,6 @@ _factor_obs.csv
 
 # project virtualenv
 .venv/
+
+# generated pack for external LLM review — regenerate, don't version
+repo_pack.md
