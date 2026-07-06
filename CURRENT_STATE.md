@@ -111,6 +111,27 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   thesis, so not adopted. Recorded as the best-seen ride-vs-pile trade if that preference
   ever flips; that's a design call at a lock, not a backtest call.
 
+## Implementation alpha — banked ops/tax/financing upgrades (signals untouched)
+
+*Lateral pass 2026-07-05: the signal layer is closed; the remaining certain edges are
+plumbing. Each fires at a capital rung, each is worth ~0.3–1%/yr with certainty — more
+than any disputed signal idea of the review gauntlet.*
+
+- **NOW (taxable account): tax-GAIN harvesting.** Erik is in the 0% LTCG bracket — each
+  December, realize long-term gains up to the bracket ceiling and instantly rebuy (no
+  wash-sale rule on gains): free basis step-up against the 15% rate his future self pays.
+  Pairs with the Roth wrapper for new contributions (see tax caveat above).
+- **~$35k: one MES micro-future replaces UPRO** — same 100% S&P notional, no 0.91% ER, no
+  daily-reset decay, financing at implied repo (~rf+30bps): ~0.5–1%/yr cheaper on the
+  equity slice. Needs a futures-capable broker (IBKR — the ladder's destination anyway).
+  Lumpy below $34k (0-or-1 contract), so it unlocks AT the rung, not before.
+- **IBKR era: fully-paid securities lending on UPRO** (chronically hard-to-borrow;
+  ~0.3–1%/yr on that slice for checking a box; Chase self-directed doesn't offer it).
+- **~$110k portfolio-margin era: box-spread financing** — selling SPX boxes borrows at
+  ~T-bills+30bps, upgrading the degraded middle-rung leverage pricing toward the clean
+  2.3× the studies assume. Decide at that era's first lock alongside the tail-management
+  question above.
+
 ## The evidence chain (where the proof lives)
 
 - **Trial ledger:** `backtest/significance.py` `TRIAL_SHARPES` — every distinct "can it beat
