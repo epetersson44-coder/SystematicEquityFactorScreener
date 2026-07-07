@@ -21,7 +21,11 @@ in `backtest/picks/`, git-committed forward — survivorship-free by constructio
 | `momentum` | S&P 500 12-1 cross-sectional momentum + 200d trend failsafe | kept as the one surviving stock-selection record, for the memo |
 
 Watch-only: `shadow` — the 2.3× levered blend derived from the same locks (the ~$110k
-portfolio-margin era construction). Never presented as tradeable today. **Open design
+portfolio-margin era construction). Never presented as tradeable today. Honest-convention
+row (2026-07-05, `experiments/2026-07-05_honest_leverage_ladder.py`): CAGR 15.4%, honest
+excess Sharpe 0.76 (vs blend 0.78 — leverage is ~Sharpe-free at rf+40bps; rungs are priced
+in DRAWDOWN, −16%→−35%, not efficiency), maxDD −35%, $10k→$176k. Dominates ssoB (0.62,
+12.3%) on every honest axis; purely capital-gated. **Open design
 question, deferred to that era's first lock: tail management at 2.3× (synthetic tails
 −70%+). Known dials, cheapest first: size 1.8–2.0× (synthetic median maxDD mid-30s, per
 `leverage_study.py`), vol-target the leverage (dynamic L ≤ 2.3), the banked DBMF slice.
