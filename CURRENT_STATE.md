@@ -27,7 +27,18 @@ question, deferred to that era's first lock: tail management at 2.3× (synthetic
 `leverage_study.py`), vol-target the leverage (dynamic L ≤ 2.3), the banked DBMF slice.
 A real put/collar overlay study requires REAL options data (OptionMetrics/ORATS-class,
 paid) — simulating option prices from VIX rules-of-thumb is fabrication and will not be
-done; that subscription is the first legitimate paid-data unlock of the margin era.**
+done; that subscription is the first legitimate paid-data unlock of the margin era. The
+same paid-data study should price buy-write/put-write overlays (the classic slow-market
+income tool — three gates today: conditional deployment = regime timing [closed 0.59],
+honest testing = options data, permanent deployment sells the upside ssoB buys).**
+
+**The slow-core (Japanified-US) operating rule, from the transplant receipts:** tripwires
+detect TREND death; the parallel books detect LEVERAGE death. On a dead equity core,
+blend out-piles ssoB (EWJ: $32.8k vs $26.8k) because daily-reset decay eats the 3× in
+chop — so a Japan decade shows up in the desk itself as the paper blend line walking away
+from the real ssoB line for years while the sleeve keeps earning. Sanctioned response: a
+[POLICY] mix rotation (ssoB → blend construction) at a lock, decided from the live desk
+evidence, never from a forecast.
 
 **Real money:** from 2026-07-13 the ssoB construction runs in a real ~$8k account
 (substitutions SPLG/IAU/PDBC; order sheets only via `tracker.shopping_list()`). Terms:
