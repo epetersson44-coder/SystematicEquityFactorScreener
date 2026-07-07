@@ -121,6 +121,14 @@ than any disputed signal idea of the review gauntlet.*
   December, realize long-term gains up to the bracket ceiling and instantly rebuy (no
   wash-sale rule on gains): free basis step-up against the 15% rate his future self pays.
   Pairs with the Roth wrapper for new contributions (see tax caveat above).
+- **Deep drawdowns, once ABOVE the 0% bracket: tax-LOSS harvesting at locks** — swap legs
+  sitting at big losses into non-identical twins (UPRO→SPXL, SPLG→VOO, IAU→GLDM...),
+  exposure identical, loss carried forward forever against future 15–24% gains. The one
+  extra crash harvest that costs the strategy nothing. Sanctioned AT locks only (wired
+  into the wiki drawdown protocol 2026-07-05); while at 0% bracket, harvest GAINS not
+  losses. Drift-band rebalancing (more harvest in crashes) noted and DECLINED for the
+  manual era — intra-month triggers violate the don't-watch-the-account covenant; banked
+  for the automation era.
 - **~$35k: one MES micro-future replaces UPRO** — same 100% S&P notional, no 0.91% ER, no
   daily-reset decay, financing at implied repo (~rf+30bps): ~0.5–1%/yr cheaper on the
   equity slice. Needs a futures-capable broker (IBKR — the ladder's destination anyway).
