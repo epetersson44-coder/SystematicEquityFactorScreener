@@ -114,10 +114,12 @@ KEEP_EXT = {".py", ".md", ".txt"}
 
 # PII scrubbed from the PACK only (source files untouched — SEC requires the real
 # contact in edgar.py's User-Agent; the reviewer doesn't need it).
+# patterns built from split literals so THIS file's packed copy doesn't carry the
+# contiguous strings it exists to scrub
 REDACT = [
-    (re.compile(r"epetersson44@gmail\.com"), "<email-redacted>"),
-    (re.compile(r"Erik Petersson"), "<name-redacted>"),
-    (re.compile(r"/Users/erik\.petersson"), "/Users/<user>"),
+    (re.compile("epetersson4" + "4@gmail" + r"\.com"), "<email-redacted>"),
+    (re.compile("Erik Pet" + "ersson"), "<name-redacted>"),
+    (re.compile("/Users/erik" + r"\.petersson"), "/Users/<user>"),
 ]
 
 
