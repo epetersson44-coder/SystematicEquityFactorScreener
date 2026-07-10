@@ -115,6 +115,13 @@ def block_bootstrap_sharpe_diff(ret_a, ret_b, block=21, n_boot=2000, seed=0):
 # BLdP's deflation needs exactly this bookkeeping — the survivor must beat the best of THESE.
 # Honest label: a LOWER BOUND on the true trial count, not a census (unrecorded mental
 # trials can't be ledgered) — which is why memo_report also prints DSR at N=50/100.
+# CORRELATION NOTE (ninth review, F7): the entries are NOT independent — roughly half
+# are variants of one blend family. E[max Sharpe] over correlated trials is SMALLER
+# than the independent-N formula assumes, so treating them as independent OVERSTATES
+# the deflation hurdle and understates DSR. Do not "correct" N downward for this: the
+# undercount concern (lower bound) and the correlation concern push in opposite
+# directions, and the N=75/100 paranoia rows already bound the pessimistic side —
+# net, the quoted DSR range is conservative.
 # Convention: all entries are rf=0/cash-0 Sharpes for internal comparability; headline
 # CLAIMS use the honest convention (see experiments/2026-07-05_honest_convention.py).
 TRIAL_SHARPES = [

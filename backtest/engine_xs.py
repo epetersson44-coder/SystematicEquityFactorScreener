@@ -158,7 +158,10 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
         from its entry is sold to cash (checked at the close), held out until the next rebalance.
     leverage: long-only gross cap (>1 borrows to buy more than equity). The strategy must emit
         weights summing to <= leverage. financing_bps: annual interest (bps) on borrowed cash
-        (charged daily on negative cash) — leverage isn't free.
+        (charged daily on negative cash) — leverage isn't free. Accepts a float OR a
+        pd.Series of annualized bps by date (e.g. ^IRX*1e4 + spread) — the honest
+        time-varying convention; a flat rate overcharged the ZIRP years by ~3%/yr and
+        produced the old "leverage loses in bulls" verdict (leverage_study.py).
     cash_rate: annual risk-free rate earned on POSITIVE idle cash (charged daily; the
         cross-sectional twin of engine.run(cash_rate=)). Accepts a float OR a pd.Series
         of annualized rates indexed by date (e.g. ^IRX via tbill_series) for the honest
@@ -173,7 +176,14 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
     eff_gross = gross_max if gross_max is not None else (leverage if not allow_short else None)
     pf = MultiPortfolio(initial_capital, allow_short=allow_short, gross_max=eff_gross)
     daily_borrow = (borrow_bps / 10_000.0) / TRADING_DAYS if borrow_bps else 0.0
-    daily_fin = (financing_bps / 10_000.0) / TRADING_DAYS if financing_bps else 0.0
+    if isinstance(financing_bps, pd.Series):
+        # time-varying annualized financing (bps): align to the panel, ffill gaps, /252
+        fin_series = (financing_bps.reindex(dates).ffill().fillna(0.0)
+                      / 10_000.0 / TRADING_DAYS).to_numpy()
+        daily_fin = None
+    else:
+        fin_series = None
+        daily_fin = (financing_bps / 10_000.0) / TRADING_DAYS if financing_bps else 0.0
     if isinstance(cash_rate, pd.Series):
         # time-varying annualized rf (e.g. ^IRX): align to the panel, ffill gaps, /252
         cash_series = (cash_rate.reindex(dates).ffill().fillna(0.0) / TRADING_DAYS).to_numpy()
@@ -202,8 +212,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
             pf.apply_stops(closes.iloc[i], stop_loss, cost) # daily stop check at the close
         if daily_borrow:
             pf.accrue_borrow(closes.iloc[i], daily_borrow)  # holding cost on shorts, on today's book
-        if daily_fin and pf.cash < 0:
-            pf.cash += pf.cash * daily_fin                  # interest on borrowed cash (cash < 0)
+        fin_today = fin_series[i] if fin_series is not None else daily_fin
+        if fin_today and pf.cash < 0:
+            pf.cash += pf.cash * fin_today                  # interest on borrowed cash (cash < 0)
         rate_today = cash_series[i] if cash_series is not None else daily_cash
         if rate_today and pf.cash > 0:
             pf.cash *= 1 + rate_today                        # idle positive cash earns the rf rate

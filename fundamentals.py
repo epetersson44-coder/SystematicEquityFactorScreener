@@ -245,7 +245,16 @@ def _simfin_canonical(ticker, inc, inc_p, bal, bal_p, cf, market_cap, sector, re
         return float(row[col]) if (row is not None and col in row and row[col] == row[col]) else None
 
     def debt(b):                                               # short + long term debt
-        return None if b is None else (g(b, "Short Term Debt") or 0.0) + (g(b, "Long Term Debt") or 0.0)
+        if b is None:
+            return None
+        st, lt = g(b, "Short Term Debt"), g(b, "Long Term Debt")
+        if st is None and lt is None:
+            # missing must STAY missing (edgar.total_debt convention): `or 0.0` on both
+            # legs fabricated a debt-free firm whenever the balance row existed but the
+            # debt columns didn't, flattering EV and net-debt/EBITDA — the exact bug
+            # class factors.py documents as fixed (ninth review, F9; retired path)
+            return None
+        return (st or 0.0) + (lt or 0.0)
 
     ebit = g(inc, "Operating Income (Loss)")
     da = g(inc, "Depreciation & Amortization")
@@ -276,7 +285,8 @@ def _simfin_canonical(ticker, inc, inc_p, bal, bal_p, cf, market_cap, sector, re
         "sector": sector,
         "report_date": str(report_date.date()) if hasattr(report_date, "date") else str(report_date),
         "market_cap": market_cap,
-        "enterprise_value": (market_cap + total_debt - cash) if (market_cap and cash is not None) else None,
+        "enterprise_value": (market_cap + total_debt - cash)
+                            if (market_cap and total_debt is not None and cash is not None) else None,
         "total_debt": total_debt,
         "cash": cash,
         "equity": g(bal, "Total Equity"),

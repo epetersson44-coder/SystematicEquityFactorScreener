@@ -34,7 +34,10 @@ from backtest import costs, metrics
 def trailing_yield_panel(tickers=ETFS, refresh=False):
     """Trailing-12-month distribution yield per ETF (the carry proxy), aligned to the price
     panel's dates. Point-in-time: only dividends already paid by each date are counted."""
-    path = os.path.join(CACHE_DIR, "carry_yield.csv")
+    # cache keyed by universe — one unkeyed file silently served the default universe
+    # to any caller with different tickers (the stale-universe class etf_panel guards
+    # against; ninth review, F10 — carry is closed [POLICY], fixed for if it reopens)
+    path = os.path.join(CACHE_DIR, f"carry_yield_{'_'.join(sorted(tickers))}.csv")
     if not refresh and os.path.exists(path):
         return pd.read_csv(path, index_col=0, parse_dates=True)
     close = etf_panel(tickers)["Close"]

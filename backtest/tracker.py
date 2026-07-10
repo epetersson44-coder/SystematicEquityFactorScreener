@@ -34,17 +34,24 @@ def _market_risk_on(refresh=False, ma=200):
     return float(spy.iloc[-1]) > float(spy.iloc[-ma:].mean())
 
 
-def momentum_picks(refresh=False):
+def momentum_picks(refresh=False, cash_etf="SGOV"):
     """Today's cross-sectional momentum basket WITH the trend-filter failsafe: if SPY is
-    below its 200-day average (downtrend), hold CASH this month instead of the book.
+    below its 200-day average (downtrend), hold T-BILLS this month instead of the book.
     Validated 2005-2026 (momentum_ls.py): halves max drawdown (-59%->-30%), dodged the 2008
-    crash, lifts Sharpe 0.79->0.89. Returns (weights, prices_now, data_asof); weights is
-    EMPTY when risk-off — a cash month, which the simulator/desk treat as flat."""
+    crash, lifts Sharpe 0.79->0.89. Returns (weights, prices_now, data_asof).
+
+    Risk-off locks 100% `cash_etf` (SGOV), NOT an empty basket: scoring idle cash at 0%
+    is the exact leak SCOREBOARD.md's founding lesson documents (it flipped the SMA
+    verdict), and blend/sso_stack already park residual cash in SGOV via _park_cash —
+    this book was the one holdout (ninth review, F1; at ~4% bills and ~25% of history
+    below the 200d, ~+1%/yr on this book at zero risk change). Falls back to an EMPTY
+    basket (flat cash month) only if SGOV itself can't be priced at lock time."""
     closes = get_universe("sp500", refresh=refresh)["Close"]
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
     if not _market_risk_on(refresh=refresh):
-        return pd.Series(dtype=float), closes.iloc[i], asof        # risk-off -> cash
+        net, prices = _park_cash(pd.Series(dtype=float), closes.iloc[i], cash_etf, refresh)
+        return net, prices, asof                                   # risk-off -> 100% T-bills
     weights = CrossSectionalMomentum().rank(closes, i)
     if weights is None:
         raise RuntimeError("not enough history to rank the universe")
@@ -168,9 +175,20 @@ def shopping_list(capital, book="sso_stack", refresh=True, fractional=True, subs
         sgov = float(get_prices("SGOV", refresh=refresh)["Close"].iloc[-1])
         sh = round(residue / sgov, 4) if fractional else int(residue // sgov)
         if sh > 0:
-            rows.append({"ticker": "SGOV", "weight": round(residue / capital, 4),
-                         "target_$": round(residue, 2), "price": round(sgov, 2),
-                         "shares": sh, "est_cost_$": round(sh * sgov, 2)})
+            # ONE row per ticker on the order sheet: books that park cash in SGOV via
+            # _park_cash already have a SGOV row, and two same-ticker rows on the most
+            # error-prone step of the real-money pipeline invite a mistyped or skipped
+            # order (ninth review, F6) — fold the residue into the existing row instead
+            existing = next((r for r in rows if r["ticker"] == "SGOV"), None)
+            if existing:
+                existing["weight"] = round(existing["weight"] + residue / capital, 4)
+                existing["target_$"] = round(existing["target_$"] + residue, 2)
+                existing["shares"] = round(existing["shares"] + sh, 4) if fractional else existing["shares"] + sh
+                existing["est_cost_$"] = round(existing["est_cost_$"] + sh * sgov, 2)
+            else:
+                rows.append({"ticker": "SGOV", "weight": round(residue / capital, 4),
+                             "target_$": round(residue, 2), "price": round(sgov, 2),
+                             "shares": sh, "est_cost_$": round(sh * sgov, 2)})
             spent += sh * sgov
     df = pd.DataFrame(rows)
     df.attrs["asof"] = asof
@@ -327,7 +345,10 @@ def lock(strategy="momentum", refresh=False):
         "spy_lock": round(spy_close, 4),
     }
     if strategy == "momentum":                           # record the trend-filter regime
-        rec["regime"] = "risk_on" if rec["n"] else "risk_off (cash)"
+        # SGOV can't be a momentum pick (S&P-500 universe), so an all-SGOV basket is
+        # unambiguously the risk-off T-bill lock; n==0 is the SGOV-unpriceable fallback
+        rec["regime"] = ("risk_off (SGOV)" if set(rec["picks"]) == {"SGOV"}
+                         else "risk_on" if rec["n"] else "risk_off (cash)")
     out_dir = os.path.join(PICKS_DIR, strategy)
     os.makedirs(out_dir, exist_ok=True)
     month = rec["lock_date"][:7]                          # one lock per calendar month
@@ -339,6 +360,8 @@ def lock(strategy="momentum", refresh=False):
         json.dump(rec, f, indent=2)
     if rec["n"] == 0:
         print(f"locked {strategy}: RISK-OFF — cash this month (SPY below its 200-day) -> {os.path.relpath(path)}")
+    elif rec.get("regime") == "risk_off (SGOV)":
+        print(f"locked {strategy}: RISK-OFF — 100% SGOV (T-bills) this month (SPY below its 200-day) -> {os.path.relpath(path)}")
     else:
         print(f"locked {rec['n']} {strategy} picks (data as of {asof}) -> {os.path.relpath(path)}")
         print(f"  sample names: {', '.join(sorted(rec['picks'])[:12])} ...")
@@ -383,7 +406,12 @@ def _simulate(recs, closes, spy_close, initial=10_000.0, cost_bps=10.0):
     overstate a high-turnover book; the fall memo needs the net number.
 
     recs: list of {data_asof, picks} (one per monthly lock). closes: (date x ticker)
-    panel. spy_close: Series of SPY close by date."""
+    panel. spy_close: Series of SPY close by date.
+
+    An EMPTY-picks month scores flat at 0% — acceptable only because risk-off locks now
+    hold 100% SGOV (priced through the panel like any position, 2026-07-10), so empty
+    means the SGOV-unpriceable fallback, not a normal cash month; the record has no
+    legacy empty locks to mis-score (checked: one momentum lock, risk-on)."""
     recs = sorted(recs, key=lambda r: r["data_asof"])
     dates = [pd.to_datetime(r["data_asof"]) for r in recs]
     end = closes.index[-1]
@@ -422,7 +450,9 @@ def _simulate(recs, closes, spy_close, initial=10_000.0, cost_bps=10.0):
                    for t, w in rec["picks"].items()}
     eq = pd.Series(curve).sort_index()
     s0 = float(spy_close.loc[spy_close.index >= dates[0]].iloc[0])
-    s1 = float(spy_close.iloc[-1])
+    # clip SPY to the strategy panel's last date — the two feeds can end a day apart,
+    # and comparing a longer SPY span to a shorter strategy span skews the benchmark
+    s1 = float(spy_close.loc[spy_close.index <= end].iloc[-1])
     return eq, {"final": value, "ret": value / initial - 1,
                 "spy_ret": s1 / s0 - 1, "spy_final": initial * (s1 / s0),
                 "start": dates[0].date(), "end": end.date(),
@@ -464,7 +494,11 @@ def report(strategy="momentum", initial=10_000.0, refresh=False):
           f"(avg two-way turnover {s['avg_turnover'] * 100:.0f}%/lock incl. the initial buy-in; "
           f"taxes NOT modeled — monthly turnover is short-term gains in a real account)")
 
-    now = closes.iloc[-1]
+    # last-trade carry-forward: a name that stopped trading mid-hold marks at its final
+    # price, not NaN. Red-team #4 closed this optimism leak in _simulate's managed curve;
+    # ffill closes the same leak in THIS display table (ninth review, F3) — dropping the
+    # name scored its loss as 0% in the rows a human actually reads each month.
+    now = closes.ffill().iloc[-1]
     rows = []
     for idx, rec in enumerate(sorted(recs, key=lambda r: r["data_asof"])):
         entry = _entry_prices(closes, rec["data_asof"], rec["picks"], rec.get("lock_prices"))

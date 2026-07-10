@@ -7,10 +7,12 @@
 # review-the-retired-screener-as-the-product misread), then code in dependency order,
 # tests last. Data/caches/artifacts excluded. Regenerate fresh before each share.
 #
-# PRIVACY NOTE (shown at run time too): the pack contains portfolio.py (real holdings)
-# and the SEC contact email in edgar.py. Fine to share with an LLM chat you trust;
-# strip those files below if not.
+# PRIVACY NOTE (shown at run time too): the pack contains portfolio.py (real holdings —
+# they ARE the review subject, so they stay). Name/email/home-path strings are REDACTED
+# from the pack text below (ninth review housekeeping): the reviewer doesn't need them,
+# and every paste into an external LLM is a copy you can't recall.
 
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -110,6 +112,14 @@ SKIP_DIRS = {".git", ".venv", "__pycache__", "output", "cache", "data"}
 SKIP_FILES = {OUT.name, "desk_data.json", "desk_history.json", "desk_daily.csv"}
 KEEP_EXT = {".py", ".md", ".txt"}
 
+# PII scrubbed from the PACK only (source files untouched — SEC requires the real
+# contact in edgar.py's User-Agent; the reviewer doesn't need it).
+REDACT = [
+    (re.compile(r"epetersson44@gmail\.com"), "<email-redacted>"),
+    (re.compile(r"Erik Petersson"), "<name-redacted>"),
+    (re.compile(r"/Users/erik\.petersson"), "/Users/<user>"),
+]
+
 
 def wanted(p: Path) -> bool:
     rel = p.relative_to(ROOT)
@@ -133,6 +143,8 @@ def main():
     for p in files:
         rel = p.relative_to(ROOT)
         text = p.read_text(errors="replace").rstrip("\n")
+        for pat, sub in REDACT:
+            text = pat.sub(sub, text)
         total_lines += text.count("\n") + 1
         fence = "```" if p.suffix != ".md" else "````"
         lang = {".py": "python", ".txt": "text", ".md": "markdown"}[p.suffix]
@@ -141,7 +153,7 @@ def main():
     OUT.write_text(out)
     print(f"wrote {OUT.name}: {len(files)} files, {total_lines:,} lines, "
           f"{len(out):,} chars (~{len(out) // 4:,} tokens)")
-    print("PRIVACY: includes portfolio.py (real holdings) + contact email in edgar.py.")
+    print("PRIVACY: includes portfolio.py (real holdings); name/email/home-path REDACTED from the pack.")
 
 
 if __name__ == "__main__":

@@ -73,6 +73,19 @@ def test_sortino_no_downside_is_nan():
     assert np.isnan(metrics.sortino(eq))
 
 
+def test_sortino_downside_dev_uses_full_n():
+    # Target-downside-deviation convention: RMS shortfall over ALL n periods (up days
+    # count as 0), not over only the down days — the down-day-count version overstated
+    # downside dev and understated Sortino (ninth review, F8).
+    rets = [0.01, -0.02, 0.01, 0.01]                     # one down day in four
+    eq = pd.Series(100.0 * np.cumprod([1.0] + [1 + r for r in rets]),
+                   index=pd.bdate_range("2020-01-01", periods=5))
+    r = eq.pct_change().dropna()
+    dev = np.sqrt((np.minimum(r, 0.0) ** 2).mean())      # divides by 4, not by 1
+    expected = r.mean() / dev * np.sqrt(252)
+    assert abs(metrics.sortino(eq) - expected) < 1e-9
+
+
 # ---------------------------------------------------------------- accounting
 def test_buyhold_matches_analytic_baseline():
     # The conservation proof: engine fill=close buy&hold == closed-form curve.

@@ -59,13 +59,17 @@ def sharpe(equity, rf=0.0, periods_per_year=TRADING_DAYS):
 def sortino(equity, rf=0.0, periods_per_year=TRADING_DAYS):
     """Like Sharpe but penalizes only DOWNSIDE volatility (downside deviation).
 
-    Upside swings aren't risk; Sortino divides excess return by the RMS of the
-    negative excess returns only. Higher = better. NaN if there's no downside.
+    Upside swings aren't risk. Downside deviation is the standard TARGET-downside
+    convention: RMS of the shortfalls below target over ALL n periods (up days count
+    as 0), not over only the down days. Averaging over just the down days — the bug
+    this replaced (ninth review, F8) — overstated downside dev and understated Sortino
+    by an amount that varied with the fraction of down days, making cross-strategy
+    comparisons inconsistent. Higher = better. NaN if there's no downside.
     """
     ret = _daily_returns(equity)
     excess = ret - rf / periods_per_year
-    downside = excess[excess < 0]
-    if len(downside) == 0:
+    downside = np.minimum(excess, 0.0)
+    if not (downside < 0).any():
         return np.nan
     downside_dev = np.sqrt((downside ** 2).mean())
     if downside_dev == 0:

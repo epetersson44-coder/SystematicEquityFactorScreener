@@ -60,7 +60,11 @@ def _book(strategy, smap):
                 "diff": None}
     panel = download_panel(names)["Close"]
     lock = pd.to_datetime(rec["data_asof"])
-    seg = panel[panel.index >= lock]
+    # ffill = last-trade carry-forward: without it a name that stops trading mid-hold
+    # goes NaN, mul->sum(axis=1) silently drops it, and the book renders an instant
+    # -100% on that slice — a THIRD delisting convention next to _simulate's carry and
+    # report()'s (former) exclusion. One convention everywhere (ninth review, F5).
+    seg = panel[panel.index >= lock].ffill()
     # entry prices from the SAME panel as today's marks (not the stored lock_prices,
     # which sit on a stale adjustment basis once a dividend re-scales the history)
     entry = T._entry_prices(panel, rec["data_asof"], rec["picks"], rec.get("lock_prices"))
@@ -126,7 +130,11 @@ def _daily_book(strategy):
     names = sorted({t for r in recs for t in r["picks"]})
     if not names:                                       # every lock was cash -> nothing to chart
         return None
-    panel = download_panel(names)["Close"]
+    # ffill: carry a delisted/halted name at its last trade instead of letting NaN drop
+    # the position from seg.mul(...).sum() — same one-convention fix as _book (ninth
+    # review, F5). Forward-fill only propagates AFTER a name's first print, so names
+    # that list later are unaffected.
+    panel = download_panel(names)["Close"].ffill()
     bounds = [pd.to_datetime(r["data_asof"]) for r in recs] + [panel.index[-1]]
     value, pieces = 10_000.0, []
     for k, rec in enumerate(recs):

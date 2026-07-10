@@ -180,10 +180,15 @@ def run_trend(cost_bps=5, panels=None, vol_target=True, target_vol=0.10, max_gro
               financing_bps=400, long_short=False, borrow_bps=50, cash_rate=0.0, offset=0,
               looks=ENSEMBLE_LOOKS, hurdle=False):
     """Equity curve of the cross-asset trend sleeve. UNLEVERAGED by default (max_gross=1.0: the
-    sleeve scales DOWN toward its vol target and parks the rest in cash, but never borrows) —
-    removing the old 2x cap actually IMPROVED the blend (Sharpe 0.85→0.90, maxDD −21%→−18%):
-    the leverage's financing cost + amplified drawdowns outweighed it. Pass max_gross>1 to opt
-    back into the levered (managed-futures) construction; financing is charged on borrowed cash.
+    sleeve scales DOWN toward its vol target and parks the rest in cash, but never borrows).
+    The original "removing the old 2x cap IMPROVED the blend (Sharpe 0.85→0.90, maxDD
+    −21%→−18%)" verdict was priced at FLAT financing_bps=400 — the convention
+    leverage_study.py later discredited (overcharged the ZIRP bulls ~3%/yr) — so it was
+    re-run honestly at ^IRX+40bps, all 21 offsets, pre-registered
+    (experiments/2026-07-10_sleeve_gross_honest.py): see that file for the standing
+    verdict on max_gross>1. Margin-era design question either way — sleeve gross >1 is
+    not implementable in the live cash account. financing_bps accepts a Series for the
+    honest convention; financing is charged on borrowed cash.
     long_short=True shorts down-trending assets (real managed-futures profile → stronger
     crisis alpha), charging borrow on the short legs. cash_rate credits idle cash with the rf
     rate (the sleeve parks in cash when assets aren't trending — that cash should earn T-bills).

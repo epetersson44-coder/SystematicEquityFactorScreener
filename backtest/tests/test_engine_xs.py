@@ -450,6 +450,31 @@ def test_cash_rate_accepts_time_varying_series():
     assert 0.045 < (stepped.iloc[-1] / stepped.iloc[0] - 1) < 0.055
 
 
+def test_financing_bps_accepts_time_varying_series():
+    # Series financing (the honest ^IRX+spread convention, ninth review F2 — the
+    # sleeve-gross re-run depends on it): a constant series must match the scalar path
+    # exactly, and financing must actually bite on borrowed cash.
+    dates = pd.date_range("2020-01-01", periods=253, freq="D")
+    px = pd.DataFrame({"X": [100.0] * 253}, index=dates)
+    panel = {"Close": px, "Open": px}
+
+    class Borrow2x(CrossSectionalStrategy):                 # 200% long on day 0, then hold
+        def target_weights(self, closes, i):
+            return pd.Series({"X": 2.0}) if i == 0 else None
+
+    kw = dict(fill="next_open", leverage=2.0)
+    scalar = run_xs(panel, Borrow2x(), financing_bps=400.0, **kw)
+    series = run_xs(panel, Borrow2x(), financing_bps=pd.Series(400.0, index=dates), **kw)
+    assert abs(series.iloc[-1] / scalar.iloc[-1] - 1) < 1e-9
+    # flat price, borrowed 100% at 4%/yr -> equity ends ~4% lower
+    assert 0.94 < scalar.iloc[-1] / scalar.iloc[0] < 0.975
+
+    # 0-then-8% step over the year ~= flat 4% on the same borrow
+    step = pd.Series([0.0] * 126 + [800.0] * 127, index=dates)
+    stepped = run_xs(panel, Borrow2x(), financing_bps=step, **kw)
+    assert 0.94 < stepped.iloc[-1] / stepped.iloc[0] < 0.975
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

@@ -134,7 +134,7 @@ Goal: **steady, durable compounding** — not a playground for one-off theses. S
 |--------|-------|
 | Total value | ${total_value:,.2f} |
 | Cash | ${CASH:,.2f} |
-| Unrealized G/L | +${total_unreal:,.2f} ({total_unreal_pct:+.2f}%) |
+| Unrealized G/L | ${total_unreal:+,.2f} ({total_unreal_pct:+.2f}%) |
 | Last updated | {date} {time} |
 
 ---

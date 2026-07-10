@@ -8,7 +8,8 @@
 #      stale cache would lock last month's signals with today's date).
 #   2. Complete quote row — every sleeve ETF priced on the last bar (the red-team #1
 #      guard, run proactively instead of exploding mid-lock).
-#   3. Live tickers priceable — UPRO / SGOV (the real-account legs) return a quote.
+#   3. Live tickers priceable — UPRO / SGOV / SPLG / IAU / PDBC (every real-account
+#      leg incl. the REAL_SUBS substitutes) return a quote.
 #   4. T-bill series health — ^IRX cache reaches near-present (shadow-book financing).
 #   5. Independent-vendor cross-check — SPY's latest close vs Stooq (free, separate
 #      infrastructure from Yahoo). Catches a corrupted/adjusted-weird vendor feed —
@@ -43,8 +44,15 @@ def check_panel(refresh=True):
     return True, f"panel fresh ({closes.index[-1].date()}), all {len(ETFS)} ETFs priced"
 
 
-def check_live_tickers(tickers=("UPRO", "SGOV")):
+def check_live_tickers(tickers=None):
+    """Default covers EVERY ticker real money actually trades: UPRO/SGOV plus the
+    REAL_SUBS substitutes (SPLG/IAU/PDBC). Before this the docstring said 'the
+    real-account legs' while checking only UPRO/SGOV — an unpriceable IAU surfaced as a
+    RuntimeError mid-shopping_list at lock time instead of here (ninth review, F4)."""
     from backtest.data import get_prices
+    if tickers is None:
+        from backtest.tracker import REAL_SUBS
+        tickers = ("UPRO", "SGOV", *REAL_SUBS.values())
     bad = []
     for t in tickers:
         try:
