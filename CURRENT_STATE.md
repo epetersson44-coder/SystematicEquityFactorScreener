@@ -51,7 +51,10 @@ Brain2.0 wiki (`CODE/quant-desk.md`) — depth is never a tripwire, only premise
 Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% backtest edge).
 **Tax caveat (taxable account):** the sleeve's monthly rotation realizes mostly SHORT-TERM
 gains; at the operator's current bracket (~0–12%, low income) the drag is ≈0–0.3%/yr —
-small but not modeled. It scales with income and capital: at a 24%+ bracket the same
+small but not modeled. Mechanics that keep it small: locks trade DRIFT (a few % of the
+book/month), tax hits only the gain slice of lots sold, and trend naturally rides winners
+(deferral) / sells losers (auto-offset). One-time setting: cost-basis method at Chase →
+Specific-ID/highest-cost-first (minimizes realized gains at every rebalance, free). It scales with income and capital: at a 24%+ bracket the same
 turnover could consume 0.5–1%/yr of the expected edge. To be MEASURED, not guessed, from
 the realized lock history at each year-end and written here; future new-savings
 contributions should weigh a Roth IRA wrapper, where this line item vanishes.
