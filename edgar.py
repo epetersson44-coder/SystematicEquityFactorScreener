@@ -347,7 +347,15 @@ def edgar_fundamentals_asof(ticker, asof, price=None):
     sector is mapped from the filer's SIC code (for the financials/REIT exclusion + sector-
     neutral ranking). Beneish inputs are partial (receivables/PPE/SGA not pulled yet) so
     beneish_m returns None for now. Returns None if uncovered / <2 annual years filed as of
-    the date."""
+    the date.
+
+    SHARES CAVEAT (eighth external review, verified 2026-07-05): `shares` is the
+    WEIGHTED-AVERAGE diluted count from the last annual filing. The filed<=asof gate makes
+    this point-in-time correct — NOT look-ahead — but it is STALE versus the live share
+    count after buybacks/issuance since fiscal year-end, so market_cap can misclassify
+    names near the small-cap band edges. If this (retired) research is ever revived, prefer
+    the cover-page dei:EntityCommonStockSharesOutstanding (as-of the filing date, same
+    filed-gate) for market cap."""
     cik = ticker_cik().get(ticker.upper())
     if not cik:
         return None

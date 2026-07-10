@@ -110,8 +110,9 @@ class VolTargetTSMOM(CrossSectionalStrategy):
         self.hurdle_col = hurdle_col
         # optional externally-computed ANNUALIZED vol panel (date x ticker), e.g. the
         # Yang-Zhang range estimator (volatility.yang_zhang) — smoother than the default
-        # close-to-close std, so the vol target resizes less erratically (Baltas-Kosowski:
-        # ~17% turnover reduction). None = the original close-to-close path, bit-identical.
+        # close-to-close std. (Baltas-Kosowski report ~17% turnover reduction at THEIR
+        # cadence; our A/B measured it does NOT transfer to monthly — -0.8%, a wash, see
+        # volatility.py header. Banked option.) None = close-to-close, bit-identical.
         self.vol_df = vol_df
 
     def _hurdle(self, closes, i, lk):

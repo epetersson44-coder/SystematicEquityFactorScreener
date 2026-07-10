@@ -48,7 +48,8 @@ evidence, never from a forecast.
 (substitutions SPLG/IAU/PDBC; order sheets only via `tracker.shopping_list()`). Terms:
 changes only at monthly locks, tinker budget zero, pre-committed drawdown protocol in the
 Brain2.0 wiki (`CODE/quant-desk.md`) — depth is never a tripwire, only premise-death is.
-Forward expectation on record: ~SPY +1–1.5%/yr net (haircut from the +2.8% backtest edge).
+Forward expectation on record: ~SPY +1–1.5%/yr net of costs, PRE-TAX (current-bracket tax
+drag ≈0–0.3%/yr — the headline and the tax caveat below travel together).
 **Tax caveat (taxable account):** the sleeve's monthly rotation realizes mostly SHORT-TERM
 gains; at the operator's current bracket (~0–12%, low income) the drag is ≈0–0.3%/yr —
 small but not modeled. Mechanics that keep it small: locks trade DRIFT (a few % of the
@@ -168,7 +169,8 @@ than any disputed signal idea of the review gauntlet.*
   the sixth review, which correctly quoted SCOREBOARD.md's own "the honest one is the
   truth" back at us):** cash at real ^IRX in the engine + excess-return Sharpes. Blend
   **0.78 vs SPY 0.57 (gap +0.22)**, bootstrap p(luck) **5.1%** (stable at 63/126d blocks),
-  DSR **0.82** vs the rf=0 ledger hurdle (conservative mix). Survived its pre-registered
+  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.83 at ledger N=46 →
+  0.77 @N=75 → 0.73 @N=100 paranoia** (rf=0 ledger hurdle — conservative mix). Survived its pre-registered
   re-headline rule (gap ≥ +0.15, p ≤ 0.10) — but these honest numbers are the QUOTABLE
   ones now; the naive row stays for ledger comparability only. Implementable book (single
   offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
