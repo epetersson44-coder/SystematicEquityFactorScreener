@@ -44,13 +44,19 @@ def momentum_picks(refresh=False, cash_etf="SGOV"):
     is the exact leak SCOREBOARD.md's founding lesson documents (it flipped the SMA
     verdict), and blend/sso_stack already park residual cash in SGOV via _park_cash —
     this book was the one holdout (ninth review, F1; at ~4% bills and ~25% of history
-    below the 200d, ~+1%/yr on this book at zero risk change). Falls back to an EMPTY
-    basket (flat cash month) only if SGOV itself can't be priced at lock time."""
+    below the 200d, ~+1%/yr on this book at zero risk change). If SGOV itself can't be
+    priced, this REFUSES to lock (fail loud, red-team-#1 style; tenth review) rather
+    than silently locking a flat 0% cash month the scoring pipeline would then have to
+    special-case — re-run the lock after the feed heals."""
     closes = get_universe("sp500", refresh=refresh)["Close"]
     i = len(closes) - 1
     asof = closes.index[i].date().isoformat()
     if not _market_risk_on(refresh=refresh):
         net, prices = _park_cash(pd.Series(dtype=float), closes.iloc[i], cash_etf, refresh)
+        if net.empty:
+            raise RuntimeError(
+                "momentum risk-off needs a priceable SGOV — refusing to lock a 0%-cash "
+                "month (the idle-cash-at-0 leak); re-run the lock after the feed heals")
         return net, prices, asof                                   # risk-off -> 100% T-bills
     weights = CrossSectionalMomentum().rank(closes, i)
     if weights is None:
@@ -408,10 +414,12 @@ def _simulate(recs, closes, spy_close, initial=10_000.0, cost_bps=10.0):
     recs: list of {data_asof, picks} (one per monthly lock). closes: (date x ticker)
     panel. spy_close: Series of SPY close by date.
 
-    An EMPTY-picks month scores flat at 0% — acceptable only because risk-off locks now
-    hold 100% SGOV (priced through the panel like any position, 2026-07-10), so empty
-    means the SGOV-unpriceable fallback, not a normal cash month; the record has no
-    legacy empty locks to mis-score (checked: one momentum lock, risk-on)."""
+    An EMPTY-picks month scores flat at 0% — legacy handling only: risk-off locks hold
+    100% SGOV (priced through the panel like any position, 2026-07-10) and momentum_picks
+    REFUSES to lock if SGOV is unpriceable, so no new empty lock can be created and the
+    record has no legacy ones (checked: one momentum lock, risk-on). If an empty lock
+    ever appears by hand-editing, this path under-credits it by the T-bill rate — flag
+    it, don't trust it."""
     recs = sorted(recs, key=lambda r: r["data_asof"])
     dates = [pd.to_datetime(r["data_asof"]) for r in recs]
     end = closes.index[-1]

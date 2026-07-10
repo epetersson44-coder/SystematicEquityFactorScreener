@@ -12,6 +12,14 @@
 # AFTER the results commit — e.g. path portability — are visible in git and don't taint
 # the run.) Exit 1 on any violation.
 #
+# KNOWN LIMITATION (tenth review, stated rather than papered over): this proves the BAR
+# predated the outcome and wasn't edited; it does NOT re-execute experiments to confirm
+# the transcribed RESULTS numbers match a fresh run. Byte-exact re-verification is
+# structurally impossible on this data: yfinance re-scales the entire adjusted history
+# whenever a dividend posts, so every re-run drifts slightly. The mitigation is that
+# each experiment file IS the runnable procedure — anyone (including a future Erik who
+# stops trusting his past self) can re-run it today and compare within tolerance.
+#
 #   .venv/bin/python -m backtest.verify_prereg
 
 import re
