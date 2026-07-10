@@ -1,6 +1,6 @@
 # CURRENT STATE — read this first
 
-*Updated 2026-07-04. If you are reviewing this repo (human or AI): it is **not one product**.
+*Updated 2026-07-10. If you are reviewing this repo (human or AI): it is **not one product**.
 It is a research lab containing live strategies, retired negative results kept on purpose, and
 banked options. Reviewing a retired module as if it were the product is the #1 misread.*
 
@@ -18,7 +18,7 @@ in `backtest/picks/`, git-committed forward — survivorship-free by constructio
 |---|---|---|
 | `blend` | risk-parity SPY + vol-targeted trend sleeve (SPY/EFA/TLT/IEF/GLD/DBC, 1/3/12-mo TSMOM ensemble), cash in SGOV | the headline: wins the RIDE. Naive convention (rf=0, cash 0%): Sharpe 0.94 vs SPY 0.65. **HONEST convention (cash at ^IRX, excess Sharpe — the quotable row per SCOREBOARD's own standard): 0.78 vs 0.57, gap +0.22, p(luck) 5.1%**; implementable single-offset book: median 0.78 [0.73, 0.83] — ≈ the tranche ideal. maxDD −16% vs −55%, 2006–26, net |
 | `sso_stack` ("ssoB") | 33% UPRO + 67% × the same trend sleeve, residual SGOV (~167% notional, no margin) | goes for the PILE: beats SPY's raw return in every tested window incl. crisis-free bulls; accepts ~SPY crash depth |
-| `momentum` | S&P 500 12-1 cross-sectional momentum + 200d trend failsafe | kept as the one surviving stock-selection record, for the memo |
+| `momentum` | S&P 500 12-1 cross-sectional momentum + 200d trend failsafe; risk-off months lock 100% SGOV (2026-07-10 — was flat 0% cash, the one book violating SCOREBOARD's own idle-cash lesson; ninth review F1, worth ~+1%/yr at today's bills) | kept as the one surviving stock-selection record, for the memo |
 
 Watch-only: `shadow` — the 2.3× levered blend derived from the same locks (the ~$110k
 portfolio-margin era construction). Never presented as tradeable today. Honest-convention
@@ -129,6 +129,17 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   windows to SPY itself (12.1% vs 13.1%, 21.3% vs 23.1%) — fails this book's beat-SPY-raw
   thesis, so not adopted. Recorded as the best-seen ride-vs-pile trade if that preference
   ever flips; that's a design call at a lock, not a backtest call.
+- **Sleeve-internal gross >1 at honest financing** (margin era only; pre-reg `d7da27d`,
+  `backtest/experiments/2026-07-10_sleeve_gross_honest.py`, ninth review F2): the old
+  "leverage loses" closure was priced at flat-4% financing — re-run at ^IRX+40bps the
+  **Sharpe leg flips** (blend median exSharpe 0.768→0.800 at G=2.0, worst offset improves
+  too) but the **maxDD leg fails** (−16.8%→−20.8% median): the amplified-drawdown half was
+  never a financing artifact. Priced menu row for the leverage era: +0.03 exSharpe per
+  ~4pts maxDD. Mechanism on record: the gross cap binds on **80% of rebalances** (vol
+  target wants median gross 1.43; capped sleeve realizes 7.5% vol vs the 10% design) — and
+  the same measurement settles the cash account: raising `target_vol` there adds exposure
+  only in the ~20% concentrated/crisis months where the TARGET binds, so **no in-cash-account
+  vol-target headroom exists**. Closed [EMPIRICAL], banked for the 2.3× era's sleeve design.
 
 ## Implementation alpha — banked ops/tax/financing upgrades (signals untouched)
 
@@ -162,20 +173,34 @@ than any disputed signal idea of the review gauntlet.*
 ## The evidence chain (where the proof lives)
 
 - **Trial ledger:** `backtest/significance.py` `TRIAL_SHARPES` — every distinct "can it beat
-  SPY?" construction evaluated (45 as of 2026-07-04; honest label: a LOWER BOUND on trials,
-  reconstructed from committed experiments — the N=50/100 paranoia rows in `memo_report`
-  are the mitigation). Naive convention: blend DSR **0.93**, bootstrap P(luck) **1.6%**.
+  SPY?" construction evaluated (48 as of 2026-07-10; honest label: a LOWER BOUND on trials,
+  reconstructed from committed experiments — the N=75/100 paranoia rows in `memo_report`
+  are the mitigation; correlation note added 2026-07-10: trials are NOT independent, which
+  makes the independent-N hurdle conservative — the two labels push in opposite directions
+  and the paranoia rows bound the bad one). Naive convention: blend DSR **0.93**, bootstrap
+  P(luck) **1.6%**.
 - **Honest-convention memo (2026-07-05, two-commit pre-registration at `3fb1e82` — F2 of
   the sixth review, which correctly quoted SCOREBOARD.md's own "the honest one is the
   truth" back at us):** cash at real ^IRX in the engine + excess-return Sharpes. Blend
   **0.78 vs SPY 0.57 (gap +0.22)**, bootstrap p(luck) **5.1%** (stable at 63/126d blocks),
-  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.83 at ledger N=46 →
-  0.77 @N=75 → 0.73 @N=100 paranoia** (rf=0 ledger hurdle — conservative mix). Survived its pre-registered
+  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.83 at ledger N=48 →
+  0.77 @N=75 → 0.74 @N=100 paranoia** (recomputed 2026-07-10 on the median-offset
+  implementable book — the same curve as the quoted 0.78 — after the ledger grew to 48;
+  rf=0 ledger hurdle — conservative mix). Survived its pre-registered
   re-headline rule (gap ≥ +0.15, p ≤ 0.10) — but these honest numbers are the QUOTABLE
   ones now; the naive row stays for ledger comparability only. Implementable book (single
   offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
   the live construction sacrifices ~nothing to the design ideal.
   (`backtest/experiments/2026-07-05_honest_convention.py`)
+- **Ninth review response (2026-07-10, `03a3aa0` + the sleeve-gross experiment):** 11
+  findings verified against code, 10 real — the gauntlet's best hit rate (rounds 7–8 had
+  decayed to recycled/fabricated claims; this reviewer cited real internals). Fixed: momentum
+  risk-off → SGOV (F1, above), ONE delisting convention across all three views of a record
+  (_simulate last-trade carry == report table == dashboard render — a mid-hold delisting
+  used to show three different numbers), preflight now covers every real-account leg incl.
+  REAL_SUBS, one-row-per-ticker order sheets, Sortino moved to the standard full-n
+  target-downside convention, SimFin debt None-propagation (missing stays missing), Series
+  financing in the engine, DSR correlation note, PII redaction in the repo pack.
 - **Timing luck:** `backtest/timing_luck.py` — all-21-offset sweeps; adopted numbers are
   all-offset medians/tranches, not a lucky calendar day.
 - **Leverage & LETF mechanics:** `backtest/leverage_study.py` — daily-reset simulation with

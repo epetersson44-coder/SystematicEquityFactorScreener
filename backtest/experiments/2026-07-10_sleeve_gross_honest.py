@@ -103,3 +103,20 @@ for name in ("levered G=1.5", "levered G=2.0"):
           and df.blend_exs.min() >= base.blend_exs.min()
           and df.blend_dd.median() >= base.blend_dd.median())
     print(f"  {name}: {'ADOPT bar MET (margin-era design)' if ok else 'FAIL -> ledger + bank'}")
+
+# RESULTS (run 2026-07-10, unmodified from pre-registration d7da27d; honest convention):
+#   baseline G=1.0  blend exSharpe med 0.768 [0.719,0.820]  maxDD med -16.8%  sleeve naive med 0.864
+#   levered  G=1.5  blend exSharpe med 0.790 [0.740,0.827]  maxDD med -19.4%  FAIL (maxDD leg)
+#   levered  G=2.0  blend exSharpe med 0.800 [0.759,0.849]  maxDD med -20.8%  FAIL (maxDD leg)
+#   The Sharpe leg PASSED for both variants — median AND worst offset improve — so honest
+#   financing flips the FINANCING half of the old closure ("leverage loses" was a flat-4%
+#   artifact here too, exactly as it was for external blend leverage). The bar failed
+#   ONLY on drawdown: the amplified-DD half of the old verdict is real and was never
+#   about financing. Pre-run expectation held on both legs.
+#   VERDICT: full bar FAIL for G=1.5 and G=2.0 -> BANKED as a priced margin-era menu
+#   row: sleeve gross 2.0 buys +0.03 blend median exSharpe for ~4pts deeper median
+#   maxDD (ride-vs-pile, same family as the 2.3x ladder — more risk-adjusted return
+#   exists but is paid for in drawdown, not free). Not implementable in the cash
+#   account; informs the leverage-era sleeve design only. The convention-contamination
+#   door the ninth review named (F2) is now CLOSED [EMPIRICAL].
+#   Ledger: G=1.5 sleeve naive 0.856, G=2.0 0.870 -> TRIAL_SHARPES.

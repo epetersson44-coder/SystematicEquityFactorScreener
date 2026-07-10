@@ -184,6 +184,11 @@ TRIAL_SHARPES = [
             # FAILED the pre-registered OOS check on 1999-2006 (0.986 vs 1.018, deeper DD)
             # -> BANKED as in-sample-only; the OOS gate caught a would-be adoption artifact
     0.81,   # DMOM top-2: failed in-sample (worst offset 0.690, maxDD -19.5%) — concentration
+    # Sleeve-internal gross, honest financing (2026-07-10, ninth review F2 — pre-reg
+    # d7da27d, experiments/2026-07-10_sleeve_gross_honest.py): Sharpe leg passed,
+    # maxDD leg failed -> BANKED margin-era menu row (+0.03 exSharpe for ~4pts DD):
+    0.86,   # sleeve max_gross=1.5 at ^IRX+40bps (naive-convention sleeve Sharpe 0.856)
+    0.87,   # sleeve max_gross=2.0 at ^IRX+40bps (naive-convention sleeve Sharpe 0.870)
     # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
     # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
     # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs
