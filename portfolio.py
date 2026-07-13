@@ -6,30 +6,34 @@ import yfinance as yf
 from datetime import datetime
 
 # Holdings: ticker -> (shares, cost_basis_total)
+# GO-LIVE 2026-07-13: old core-satellite book (VTI/VXUS/QQQM/AVUV/NVDA/GOOG/AMD/PLTR)
+# fully liquidated 2026-07-10; $12,259.51 deployed into the ssoB construction via
+# tracker.shopping_list. Dollar-based fractional orders: DOLLAR costs are exact,
+# share counts are the sheet's estimates — true fills within rounding; correct from
+# the confirmations if they ever matter. Rebalanced only at monthly locks (/picks).
 HOLDINGS = {
-    "VTI":  (7,    2426.88),
-    "VXUS": (4,     347.56),
-    "QQQM": (4.2,  1071.39),
-    "AVUV": (3,     364.14),
-    "NVDA": (4,     763.98),
-    "GOOG": (4,    1262.40),
-    "AMD":  (1,     218.58),
-    "PLTR": (3,     582.24),
+    "UPRO": (28.4387, 4086.50),
+    "SPLG": (26.3302, 2339.44),
+    "IEF":  (21.6572, 2022.35),
+    "EFA":  (17.0342, 1764.40),
+    "TLT":  (13.5146, 1136.44),
+    "PDBC": (29.0268,  485.62),
+    "IAU":  (5.6303,   424.75),
 }
 
-# Role of each holding in the core-satellite structure
+# Role of each holding in the ssoB return-stack (33% UPRO = 100% S&P exposure;
+# the rest is the vol-targeted trend sleeve's current allocation)
 ROLES = {
-    "VTI":  "Core",
-    "VXUS": "Core (intl)",
-    "QQQM": "Tech tilt",
-    "AVUV": "Factor sleeve",
-    "NVDA": "Individual",
-    "GOOG": "Individual",
-    "AMD":  "Individual",
-    "PLTR": "Speculative",
+    "UPRO": "Equity leg (3x, = 100% S&P)",
+    "SPLG": "Sleeve: S&P slice",
+    "IEF":  "Sleeve: 7-10y Treasuries",
+    "EFA":  "Sleeve: intl developed",
+    "TLT":  "Sleeve: 20y+ Treasuries",
+    "PDBC": "Sleeve: commodities",
+    "IAU":  "Sleeve: gold",
 }
 
-CASH = 137.17
+CASH = 0.01
 WIKI_PORTFOLIO = "/Users/erik.petersson/Library/Mobile Documents/iCloud~md~obsidian/Documents/ClaudeBrain2.0/Brain2.0/wiki/PERSONAL/portfolio.md"
 
 
