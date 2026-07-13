@@ -61,10 +61,24 @@ def fetch_prices(tickers):
                     close = float(cached.iloc[-1]) if len(cached) else None
                 except Exception:                           # noqa: BLE001
                     close = None
-            if close and abs(price / close - 1) > 0.15:
-                print(f"  {ticker}: live quote {price:.2f} deviates >15% from last close "
-                      f"{close:.2f} — vendor glitch, using the close")
-                price = close
+            if close and abs(price / close - 1) > 0.05:
+                # >5% vs last close: junk print or real crash day? A real move shows
+                # in today's minute bars too; a junk quote (Yahoo served SPLG $80 on
+                # a flat 2026-07-13, -9.96% "move", while every sibling was ~flat)
+                # doesn't. Confirm or reject against intraday.
+                intraday = None
+                try:
+                    m = t.history(period="1d", interval="1m")["Close"].dropna()
+                    intraday = float(m.iloc[-1]) if len(m) else None
+                except Exception:                           # noqa: BLE001
+                    pass
+                if intraday and abs(intraday / price - 1) < 0.02:
+                    pass                                    # confirmed — real move, keep it
+                else:
+                    print(f"  {ticker}: live quote {price:.2f} is >5% off last close "
+                          f"{close:.2f} and unconfirmed by intraday bars — vendor "
+                          f"glitch, using the close")
+                    price = close
             prices[ticker] = round(price, 2)
         except Exception as e:
             print(f"  Could not fetch {ticker}: {e}")
