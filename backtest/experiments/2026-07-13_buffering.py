@@ -97,3 +97,18 @@ print(f"\nturnover cut at 0.10: {turn_cut*100:.0f}%   "
       f"maxDD delta: {(ten.dd.median() - base.dd.median())*100:+.2f}pt")
 print(f"VERDICT vs pre-registered ops bar: "
       f"{'ADOPT buffer_frac=0.10 (live sleeve config + runbook)' if ok else 'CLOSE — measured, not worth it'}")
+
+# RESULTS (run 2026-07-13, unmodified from pre-registration ddf5d8c; honest convention):
+#   baseline     exSharpe med 0.767 [0.720,0.818]  maxDD med -16.9%  turnover 4.92x/yr
+#   buffer 0.05  exSharpe med 0.765 [0.718,0.817]  maxDD med -16.5%  turnover 4.32x/yr
+#   buffer 0.10  exSharpe med 0.763 [0.716,0.816]  maxDD med -16.4%  turnover 3.83x/yr
+#   buffer 0.20  exSharpe med 0.761 [0.721,0.807]  maxDD med -16.1%  turnover 3.19x/yr
+#   Decision row (0.10): turnover -22% (bar >=20%), exSharpe -0.005 (bar <=0.005, AT
+#   the line — noted), maxDD +0.48pt SHALLOWER. OPS BAR MET -> ADOPTED as an
+#   EXECUTION policy: locks stay pure targets (the signal record is unchanged), paper
+#   books keep rebalancing to target; the band applies to REAL-account orders from the
+#   Aug 2026 rebalance via tracker.rebalance_orders (BUFFER_FRAC=0.10, _band_trades
+#   pure core unit-tested). The monotone descriptive rows (deeper band -> less
+#   turnover, slightly less exSharpe, slightly shallower DD) match the Carver story:
+#   the band is harvesting execution slack, not signal. NO ledger entry (execution
+#   layer; nothing selected from a strategy space).

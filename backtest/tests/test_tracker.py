@@ -541,6 +541,22 @@ def test_desk_book_dollar_neutral_pnl_rides_on_cash():
     assert abs(b["final"] - 10_500.0) < 1e-6                # +10% on the $5k long leg
 
 
+def test_band_trades_buffered_rebalance():
+    # The pure core of rebalance_orders (adopted 2026-07-13, buffer_frac=0.10):
+    # within-band legs hold, outside-band legs trade to the NEAREST EDGE, dropped
+    # legs exit fully, new legs enter at the lower edge.
+    cur = {"UPRO": 4300.0, "IEF": 2000.0, "TLT": 1150.0, "GLD": 400.0}
+    tgt = {"UPRO": 4000.0, "IEF": 2020.0, "TLT": 0.0, "EFA": 1700.0}
+    tr = tracker._band_trades(cur, tgt, frac=0.10)
+    assert "UPRO" not in tr                                 # band [3600,4400], cur 4300 inside
+    assert "IEF" not in tr                                  # band [1818,2222], cur 2000 inside
+    assert abs(tr["TLT"] + 1150.0) < 1e-9                   # dropped -> full exit
+    assert abs(tr["GLD"] + 400.0) < 1e-9                    # absent from targets -> full exit
+    assert abs(tr["EFA"] - 1530.0) < 1e-9                   # new leg enters at LOWER edge
+    tr2 = tracker._band_trades({"A": 5000.0}, {"A": 4000.0}, frac=0.10)
+    assert abs(tr2["A"] + 600.0) < 1e-9                     # to the nearest edge (4400), not 4000
+
+
 if __name__ == "__main__":
     import sys
     tests = sorted((n, f) for n, f in globals().items()

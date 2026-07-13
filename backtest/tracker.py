@@ -148,6 +148,75 @@ def factor_ls_picks(top_n=5, source="simfin", min_legs=2):
 # DBC issues a K-1 tax form; SPY's ~$745 share strands the sleeve's equity slice.
 REAL_SUBS = {"GLD": "IAU", "DBC": "PDBC", "SPY": "SPLG"}
 
+# Execution buffering for real-account rebalances (adopted 2026-07-13 per the
+# pre-registered ops measurement, experiments/2026-07-13_buffering.py + ddf5d8c):
+# legs whose drift sits within +-10% of target are NOT traded; legs outside trade
+# to the nearest band edge. Measured price: -22% turnover, exSharpe within 0.005,
+# maxDD 0.5pt shallower. Locks stay pure targets — buffering is order-time only.
+BUFFER_FRAC = 0.10
+
+
+def _band_trades(cur_val, tgt_val, frac=BUFFER_FRAC):
+    """Pure buffered-rebalance core: {ticker: current $} + {ticker: target $} ->
+    {ticker: signed trade $} (zero-dollar legs omitted). Within-band legs are held;
+    outside-band legs trade to the NEAREST band edge; dropped legs (target 0, band 0)
+    fully exit; new legs enter at the lower band edge."""
+    trades = {}
+    for t in set(cur_val) | set(tgt_val):
+        cur = float(cur_val.get(t, 0.0))
+        tgt = float(tgt_val.get(t, 0.0))
+        band = frac * abs(tgt)
+        new = min(max(cur, tgt - band), tgt + band)
+        if abs(new - cur) > 0.005:                          # skip sub-cent noise
+            trades[t] = new - cur
+    return trades
+
+
+def rebalance_orders(holdings, cash, book="sso_stack", frac=BUFFER_FRAC,
+                     refresh=True, subs=None):
+    """Monthly REBALANCE order sheet for a real account that already holds the book:
+    DataFrame [ticker, action, trade_$, price, shares, held_$, target_$]. The buffered
+    twin of shopping_list (which sizes an all-cash buy-in): applies REAL_SUBS to the
+    picker's targets, marks current holdings to live prices, and emits only the legs
+    outside the +-frac no-trade band, traded to the band edge. Residual cash > $1
+    sweeps to SGOV (one row per ticker). `holdings` = {ticker: shares} in REAL
+    tickers (portfolio.py's HOLDINGS shape); `cash` = uninvested cash to include."""
+    subs = REAL_SUBS if subs is None else subs
+    weights, prices, asof = PICKERS[book](refresh=refresh)
+    tgt_w = {}
+    for t, w in weights.items():
+        tgt_w[subs.get(t, t)] = tgt_w.get(subs.get(t, t), 0.0) + float(w)
+    px = {}
+    for t in set(tgt_w) | set(holdings) | {"SGOV"}:
+        if t in prices.index and np.isfinite(prices[t]) and t not in subs.values():
+            px[t] = float(prices[t])
+        else:
+            px[t] = float(get_prices(t, refresh=refresh)["Close"].iloc[-1])
+        if not (np.isfinite(px[t]) and px[t] > 0):
+            raise RuntimeError(f"rebalance_orders: no live price for {t}")
+    cur_val = {t: sh * px[t] for t, sh in holdings.items()}
+    equity = sum(cur_val.values()) + float(cash)
+    tgt_val = {t: w * equity for t, w in tgt_w.items()}
+    trades = _band_trades(cur_val, tgt_val, frac)
+    leftover = float(cash) - sum(trades.values())
+    if leftover > 1.0 and "SGOV" not in trades:
+        trades["SGOV"] = leftover                           # park the residual
+    elif leftover > 1.0:
+        trades["SGOV"] += leftover
+    rows = []
+    for t, d in sorted(trades.items(), key=lambda x: -abs(x[1])):
+        rows.append({"ticker": t, "action": "BUY" if d > 0 else "SELL",
+                     "trade_$": round(abs(d), 2), "price": round(px[t], 2),
+                     "shares": round(abs(d) / px[t], 4),
+                     "held_$": round(cur_val.get(t, 0.0), 2),
+                     "target_$": round(tgt_val.get(t, 0.0), 2)})
+    df = pd.DataFrame(rows)
+    df.attrs["asof"] = asof
+    df.attrs["equity"] = round(equity, 2)
+    df.attrs["skipped_in_band"] = sorted(t for t in tgt_val
+                                         if t not in trades and t in cur_val)
+    return df
+
 
 def shopping_list(capital, book="sso_stack", refresh=True, fractional=True, subs=None):
     """Translate a book's CURRENT picks into an order sheet for a real account:

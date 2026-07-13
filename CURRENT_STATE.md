@@ -150,10 +150,16 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   than inverse-vol (blend honest exSharpe med 0.741 vs 0.767, DD a touch deeper) —
   cluster-first bisection over-allocates duration at n≤6. CLOSED [EMPIRICAL]; revisit
   only at futures breadth (Rung 3, 20+ instruments, where the mechanism operates).
-  (`backtest/experiments/2026-07-13_hrp_sleeve.py`) (3) **Carver position buffering**
-  (no-trade bands): wash-tier at monthly cadence, ~1–3bps. (4) **RSRS timing** (光大
+  (`backtest/experiments/2026-07-13_hrp_sleeve.py`) (3) **Carver position buffering** —
+  RESOLVED 2026-07-13 (pre-reg `ddf5d8c`): ops bar MET at buffer_frac=0.10 (turnover
+  −22%, exSharpe within 0.005, maxDD 0.5pt shallower) → **ADOPTED as an EXECUTION
+  policy** from the Aug 2026 real-account rebalance: locks stay pure targets, paper
+  books rebalance to target, real orders come from `tracker.rebalance_orders` (±10%
+  no-trade band, trade to band edge; `_band_trades` core unit-tested). Fewer hand-typed
+  orders + fewer taxable micro-trims; no ledger slot (execution, not selection).
+  (`backtest/experiments/2026-07-13_buffering.py`) (4) **RSRS timing** (光大
   support/resistance regression slope, QuantsPlaybook reproductions): best Chinese
-  export, low prior — US timing trials all died. Tooling notes: **QuantConnect Lean** upgrades the banked
+  export, low prior — US timing trials all died. The only sweep item still open. Tooling notes: **QuantConnect Lean** upgrades the banked
   clean-room replication (independent engine AND data vendor in one); **pysystemtrade**
   (Carver) is the Rung-3 futures-era reference implementation (in the playbook);
   **OpenSourceAP/CrossSection** (Chen–Zimmermann, 200+ replicated anomalies w/ code+data)
