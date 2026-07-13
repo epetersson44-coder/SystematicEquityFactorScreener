@@ -171,3 +171,16 @@ ok = (df.hrp_exs.median() > df.base_exs.median()
       and df.hrp_dd.median() >= df.base_dd.median())
 print(f"\nVERDICT vs pre-registered bar: "
       f"{'STAGE-1 PASS -> pre-register the OOS annex' if ok else 'FAIL/WASH -> ledger + close (expected)'}")
+
+# RESULTS (run 2026-07-13, unmodified from pre-registration 473c96c; honest convention):
+#   baseline (inv-vol) exSharpe med 0.767 [0.720,0.818]  maxDD med -16.9%
+#   HRP sleeve         exSharpe med 0.741 [0.709,0.801]  maxDD med -17.2%  naive med 0.948
+#   FAIL on all three legs — mildly WORSE than inverse-vol, not even a wash. The
+#   pre-run expectation (wash) held in direction and was optimistic in magnitude: at
+#   n<=6 with an obvious 2-2-1-1 cluster structure, HRP's cluster-first bisection
+#   over-allocates the low-vol duration cluster relative to strength x inverse-vol,
+#   costing Sharpe and a touch of DD (joint equity/bond selloffs). The literature's
+#   HRP edge (large N, estimation noise) has no purchase at this breadth/cadence.
+#   VERDICT: CLOSED [EMPIRICAL] — inverse-vol stays; the "should we use HRP" question
+#   is dead with receipts. Revisit only at the futures era (Rung 3, 20+ instruments,
+#   where the mechanism actually operates). Ledger: naive 0.95 -> TRIAL_SHARPES.

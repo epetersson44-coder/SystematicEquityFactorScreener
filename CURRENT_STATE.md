@@ -146,11 +146,14 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   here. Candidates banked WITH PRIORS, none touching the live book: (1) **canary-asset
   gating** — RESOLVED 2026-07-13: tested same-day post-go-live, **passed BOTH stages**
   (the first candidate ever to) — see the design-call entry below.
-  (2) **HRP/HERC weighting** vs inverse-vol (via skfolio-style clustering, reimplemented
-  natively): wash prior at 6 assets. (3) **Carver position buffering** (no-trade bands):
-  wash-tier at monthly cadence, ~1–3bps. (4) **RSRS timing** (光大 support/resistance
-  regression slope, QuantsPlaybook reproductions): best Chinese export, low prior — US
-  timing trials all died. Tooling notes: **QuantConnect Lean** upgrades the banked
+  (2) **HRP weighting** — RESOLVED 2026-07-13 (pre-reg `473c96c`): FAILED, mildly worse
+  than inverse-vol (blend honest exSharpe med 0.741 vs 0.767, DD a touch deeper) —
+  cluster-first bisection over-allocates duration at n≤6. CLOSED [EMPIRICAL]; revisit
+  only at futures breadth (Rung 3, 20+ instruments, where the mechanism operates).
+  (`backtest/experiments/2026-07-13_hrp_sleeve.py`) (3) **Carver position buffering**
+  (no-trade bands): wash-tier at monthly cadence, ~1–3bps. (4) **RSRS timing** (光大
+  support/resistance regression slope, QuantsPlaybook reproductions): best Chinese
+  export, low prior — US timing trials all died. Tooling notes: **QuantConnect Lean** upgrades the banked
   clean-room replication (independent engine AND data vendor in one); **pysystemtrade**
   (Carver) is the Rung-3 futures-era reference implementation (in the playbook);
   **OpenSourceAP/CrossSection** (Chen–Zimmermann, 200+ replicated anomalies w/ code+data)

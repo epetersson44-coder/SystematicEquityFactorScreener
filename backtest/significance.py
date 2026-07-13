@@ -194,6 +194,9 @@ TRIAL_SHARPES = [
     1.05,   # blend w/ EEM+AGG 13612W b/2 equity-leg gate — the FIRST two-stage survivor
             # (in-sample +0.077 exSharpe/-3.9pts DD; OOS 1999-2006 +0.008/-1.4pts:
             # direction robust, magnitude regime-dependent) -> design call at Aug lock
+    0.95,   # HRP replacing inverse-vol in the sleeve (2026-07-13, pre-reg 473c96c):
+            # FAILED, mildly worse (0.741 vs 0.767 honest) — cluster-first bisection
+            # over-allocates duration at n<=6; closed, revisit only at futures breadth
     # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
     # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
     # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs
