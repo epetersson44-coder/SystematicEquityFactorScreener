@@ -197,6 +197,10 @@ TRIAL_SHARPES = [
     0.95,   # HRP replacing inverse-vol in the sleeve (2026-07-13, pre-reg 473c96c):
             # FAILED, mildly worse (0.741 vs 0.767 honest) — cluster-first bisection
             # over-allocates duration at n<=6; closed, revisit only at futures breadth
+    0.85,   # RSRS z-score gate on the equity leg (2026-07-13, pre-reg 77e0743,
+            # original Everbright rule verbatim): FAILED decisively (0.638 vs 0.767
+            # honest, DD deeper) — A-share daily signal doesn't survive the
+            # market+frequency port; Chinese-timing question closed with receipts
     # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
     # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
     # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs

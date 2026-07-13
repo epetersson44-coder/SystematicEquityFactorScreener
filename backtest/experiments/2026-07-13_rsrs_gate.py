@@ -114,3 +114,20 @@ ok = (df.rsrs_exs.median() > df.base_exs.median()
       and df.rsrs_dd.median() >= df.base_dd.median())
 print(f"\nVERDICT vs pre-registered bar: "
       f"{'STAGE-1 PASS -> pre-register the OOS annex' if ok else 'FAIL -> ledger + close (expected)'}")
+
+# RESULTS (run 2026-07-13, unmodified from pre-registration 77e0743; honest convention):
+#   baseline blend   exSharpe med 0.767 [0.720,0.818]  maxDD med -16.9%
+#   RSRS-gated       exSharpe med 0.638 [0.549,0.770]  maxDD med -18.3%  naive med 0.848
+#   FAIL on all three legs, decisively — the WORST gate variant tested this summer
+#   (-0.13 median exSharpe; even the worst offset of the baseline beats the MEDIAN
+#   RSRS offset). The binary hysteresis whipsaws out of US bull legs and the signal
+#   adds no crash protection the sleeve didn't already have (DD deepens). The
+#   pre-run expectation (FAIL, priors a+b+c) held with room to spare. Direct
+#   comparison, same harness: canary 3-state breadth gate +0.077, RSRS binary
+#   geometry gate -0.129 — the gate SLOT is real (canary proved it), this signal
+#   for it is not. VERDICT: CLOSED [EMPIRICAL]. The Chinese-timing question is
+#   answered with receipts; no RSRS variant hunting (the modified/R2 versions would
+#   be selection after a failed original — exactly what the protocol forbids).
+#   Ledger: naive 0.85 -> TRIAL_SHARPES. The 2026-07-12 sweep queue is now fully
+#   resolved: 1 two-stage survivor (canary), 1 ops adoption (buffering), 2 kills
+#   (HRP, RSRS).

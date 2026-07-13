@@ -157,9 +157,13 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   books rebalance to target, real orders come from `tracker.rebalance_orders` (±10%
   no-trade band, trade to band edge; `_band_trades` core unit-tested). Fewer hand-typed
   orders + fewer taxable micro-trims; no ledger slot (execution, not selection).
-  (`backtest/experiments/2026-07-13_buffering.py`) (4) **RSRS timing** (光大
-  support/resistance regression slope, QuantsPlaybook reproductions): best Chinese
-  export, low prior — US timing trials all died. The only sweep item still open. Tooling notes: **QuantConnect Lean** upgrades the banked
+  (`backtest/experiments/2026-07-13_buffering.py`) (4) **RSRS timing** — RESOLVED
+  2026-07-13 (pre-reg `77e0743`, original Everbright rule verbatim): FAILED decisively
+  (0.638 vs 0.767 honest exSharpe, DD deeper — the worst gate tested all summer); the
+  A-share daily signal does not survive the market+frequency port. CLOSED [EMPIRICAL];
+  no variant hunting. (`backtest/experiments/2026-07-13_rsrs_gate.py`)
+  **Sweep queue fully resolved same-day: 1 two-stage survivor (canary → Aug design
+  call), 1 ops adoption (buffering), 2 documented kills (HRP, RSRS).** Tooling notes: **QuantConnect Lean** upgrades the banked
   clean-room replication (independent engine AND data vendor in one); **pysystemtrade**
   (Carver) is the Rung-3 futures-era reference implementation (in the playbook);
   **OpenSourceAP/CrossSection** (Chen–Zimmermann, 200+ replicated anomalies w/ code+data)
@@ -222,10 +226,10 @@ than any disputed signal idea of the review gauntlet.*
   the sixth review, which correctly quoted SCOREBOARD.md's own "the honest one is the
   truth" back at us):** cash at real ^IRX in the engine + excess-return Sharpes. Blend
   **0.78 vs SPY 0.57 (gap +0.22)**, bootstrap p(luck) **5.1%** (stable at 63/126d blocks),
-  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.82 at ledger N=50 →
-  0.77 @N=75 → 0.73 @N=100 paranoia** (recomputed 2026-07-13 on the median-offset
-  implementable book — the same curve as the quoted 0.78 — after the canary/HRP trials
-  took the ledger to 50; rf=0 ledger hurdle — conservative mix). Survived its pre-registered
+  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.82 at ledger N=51 →
+  0.77 @N=75 → 0.74 @N=100 paranoia** (recomputed 2026-07-13 on the median-offset
+  implementable book — the same curve as the quoted 0.78 — after the sweep-queue trials
+  took the ledger to 51; rf=0 ledger hurdle — conservative mix). Survived its pre-registered
   re-headline rule (gap ≥ +0.15, p ≤ 0.10) — but these honest numbers are the QUOTABLE
   ones now; the naive row stays for ledger comparability only. Implementable book (single
   offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
