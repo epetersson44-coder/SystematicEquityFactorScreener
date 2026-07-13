@@ -475,6 +475,30 @@ def test_financing_bps_accepts_time_varying_series():
     assert 0.94 < stepped.iloc[-1] / stepped.iloc[0] < 0.975
 
 
+def test_buffer_frac_skips_small_trades():
+    # Carver no-trade band: constant 50/50 targets on gently drifting prices.
+    # buffer_frac=0 must be byte-identical to the default; buffer_frac=0.10 must
+    # skip the tiny drift-correction trades (drift stays inside the band) and so
+    # lose LESS to costs, while buffer 0 keeps trading every rebalance.
+    n = 253
+    dates = pd.date_range("2020-01-01", periods=n, freq="D")
+    drift_up = 100.0 * np.cumprod([1.0] + [1.0006] * (n - 1))   # ~+16%/yr
+    drift_dn = 100.0 * np.cumprod([1.0] + [0.9998] * (n - 1))   # ~-5%/yr
+    px = pd.DataFrame({"A": drift_up, "B": drift_dn}, index=dates)
+    panel = {"Close": px, "Open": px}
+
+    class FiftyFifty(CrossSectionalStrategy):
+        def target_weights(self, closes, i):
+            return pd.Series({"A": 0.5, "B": 0.5}) if i % 21 == 0 else None
+
+    kw = dict(fill="next_open", cost=costs.proportional(50))    # exaggerated costs
+    plain = run_xs(panel, FiftyFifty(), **kw)
+    zero = run_xs(panel, FiftyFifty(), buffer_frac=0.0, **kw)
+    buffered = run_xs(panel, FiftyFifty(), buffer_frac=0.10, **kw)
+    assert abs(zero.iloc[-1] / plain.iloc[-1] - 1) < 1e-12      # 0 == off, exactly
+    assert buffered.iloc[-1] > plain.iloc[-1]                   # fewer trades -> less fee drag
+
+
 # ---------------------------------------------------------------- runner
 if __name__ == "__main__":
     import sys

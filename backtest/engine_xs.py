@@ -143,9 +143,40 @@ class MultiPortfolio:
         return fee
 
 
+def _buffered(pf, target, prices, frac):
+    """Carver-style no-trade band: hold the current (drifted) weight when it sits within
+    +-frac*|target| of the target; otherwise trade to the NEAREST BAND EDGE, not to the
+    target. Names the strategy dropped (target 0) have a zero band -> full exit, same as
+    unbuffered. Current weights are measured on the COMPOSITION basis (holdings value
+    scaled to the target gross), not raw equity — fee-financed negative cash inflates
+    holdings/equity by a few bps every rebalance, and measuring against equity made the
+    cap guard fire on that float and trade it away (caught by the unit test). An empty
+    book (initial deployment) buys straight to target."""
+    if not pf.shares:
+        return target
+    vals = {t: pf.shares[t] * prices.get(t, np.nan) for t in pf.shares}
+    vals = {t: v for t, v in vals.items() if np.isfinite(v)}
+    hold_total = sum(abs(v) for v in vals.values())
+    gross_tgt = float(target.abs().sum())
+    if hold_total <= 0 or gross_tgt <= 0:
+        return target
+    adj = {}
+    for t in set(target.index) | set(vals):
+        cur = vals.get(t, 0.0) / hold_total * gross_tgt
+        tgt = float(target.get(t, 0.0))
+        band = frac * abs(tgt)
+        adj[t] = min(max(cur, tgt - band), tgt + band)
+    s = pd.Series(adj)
+    cap = pf.gross_max
+    tot = float(s.abs().sum())
+    if cap is not None and tot > cap:                      # asymmetric-clip residual only
+        s *= cap / tot
+    return s
+
+
 def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="next_open",
            allow_short=False, gross_max=None, borrow_bps=0.0, stop_loss=None,
-           leverage=1.0, financing_bps=0.0, cash_rate=0.0):
+           leverage=1.0, financing_bps=0.0, cash_rate=0.0, buffer_frac=0.0):
     """Walk a price panel bar by bar applying a cross-sectional strategy; return the
     equity curve.
 
@@ -162,6 +193,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
         pd.Series of annualized bps by date (e.g. ^IRX*1e4 + spread) — the honest
         time-varying convention; a flat rate overcharged the ZIRP years by ~3%/yr and
         produced the old "leverage loses in bulls" verdict (leverage_study.py).
+    buffer_frac: optional Carver-style no-trade band as a fraction of each target weight
+        (e.g. 0.10). Execution-layer only — signals unchanged; see _buffered. Default 0
+        preserves exact rebalance-to-target behavior.
     cash_rate: annual risk-free rate earned on POSITIVE idle cash (charged daily; the
         cross-sectional twin of engine.run(cash_rate=)). Accepts a float OR a pd.Series
         of annualized rates indexed by date (e.g. ^IRX via tbill_series) for the honest
@@ -197,7 +231,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
     for i in range(n):
         if fill == "next_open":
             if pending is not None:                        # yesterday's decision...
-                pf.rebalance(pending, opens.iloc[i], cost) # ...fills at today's open
+                w_exec = (_buffered(pf, pending, opens.iloc[i], buffer_frac)
+                          if buffer_frac else pending)
+                pf.rebalance(w_exec, opens.iloc[i], cost)  # ...fills at today's open
                 pending = None
             w = strategy.target_weights(closes, i)
             if w is not None:
@@ -205,7 +241,9 @@ def run_xs(panels, strategy, initial_capital=INITIAL_CAPITAL, cost=None, fill="n
         elif fill == "close":
             w = strategy.target_weights(closes, i)
             if w is not None:
-                pf.rebalance(w, closes.iloc[i], cost)
+                w_exec = (_buffered(pf, w, closes.iloc[i], buffer_frac)
+                          if buffer_frac else w)
+                pf.rebalance(w_exec, closes.iloc[i], cost)
         else:
             raise ValueError(f"unknown fill mode {fill!r}")
         if stop_loss:
