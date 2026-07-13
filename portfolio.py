@@ -54,6 +54,13 @@ def fetch_prices(tickers):
                 close = float(hist.iloc[-1]) if len(hist) else None
             except Exception:                               # noqa: BLE001
                 close = None
+            if close is None:                               # Yahoo history down too (it
+                try:                                        # happens in the same outages) —
+                    from backtest.data import get_prices    # the repo's cached panel is the
+                    cached = get_prices(ticker)["Close"].dropna()  # reference of last resort
+                    close = float(cached.iloc[-1]) if len(cached) else None
+                except Exception:                           # noqa: BLE001
+                    close = None
             if close and abs(price / close - 1) > 0.15:
                 print(f"  {ticker}: live quote {price:.2f} deviates >15% from last close "
                       f"{close:.2f} — vendor glitch, using the close")
