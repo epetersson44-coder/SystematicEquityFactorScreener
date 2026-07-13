@@ -144,9 +144,8 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   no construction found that dominates GTAA-class trend+RP at this lab's constraints — the
   serious labs (Carver, Keller family, AQR lineage) converge on the primitives already live
   here. Candidates banked WITH PRIORS, none touching the live book: (1) **canary-asset
-  gating** (Keller VAA/DAA — gate aggression on fast momentum of EEM+BND breadth, not
-  own-asset trend): the one genuinely new mechanism; moderate-low prior (published 2018,
-  decay applies); test = two-stage pre-reg with dot-com proxy OOS, worth one ledger trial.
+  gating** — RESOLVED 2026-07-13: tested same-day post-go-live, **passed BOTH stages**
+  (the first candidate ever to) — see the design-call entry below.
   (2) **HRP/HERC weighting** vs inverse-vol (via skfolio-style clustering, reimplemented
   natively): wash prior at 6 assets. (3) **Carver position buffering** (no-trade bands):
   wash-tier at monthly cadence, ~1–3bps. (4) **RSRS timing** (光大 support/resistance
@@ -156,6 +155,21 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   (Carver) is the Rung-3 futures-era reference implementation (in the playbook);
   **OpenSourceAP/CrossSection** (Chen–Zimmermann, 200+ replicated anomalies w/ code+data)
   is the revival reference if the retired factor path ever reopens.
+- **Canary equity-leg gate — PASSED BOTH STAGES (first two-stage survivor); DESIGN CALL
+  at the AUGUST 2026 lock.** Keller VAA/DAA mechanism, ported as: EEM+AGG 13612W
+  momentum breadth gates the blend's SPY leg by b/2 (full/half/zero equity, displaced
+  weight to T-bills), sleeve untouched, rule taken verbatim (no variant mining). Stage 1
+  (pre-reg `64f6f88`): median exSharpe **0.844 vs 0.767**, worst offset holds, maxDD
+  med **−13.0% vs −16.9%** — the largest in-sample margin any variant has shown. Stage 2
+  OOS on the 1999–2006 proxy panel (pre-reg `e9829df`): **passed all three legs, thinly**
+  (0.623 vs 0.615, −7.7% vs −9.1%). Honest read: direction robust across eras, magnitude
+  regime-dependent (2006–26 is flattered by canary-friendly crashes; the floor is
+  "harmless, mildly DD-protective"). **Scope:** a BLEND-construction upgrade (the shadow
+  2.3× inherits it via locks) — NOT evidence for gating ssoB's UPRO leg, whose
+  beat-SPY-raw thesis the e<1 months would bleed (the defensive step-down failed exactly
+  there); an ssoB gate needs its own experiment. August agenda: adopt/decline for the
+  blend paper book, priced with turnover (+|Δe| monthly) and the paper-book-only stakes.
+  (`backtest/experiments/2026-07-13_canary_gate.py` + `_canary_oos.py`)
 
 ## Implementation alpha — banked ops/tax/financing upgrades (signals untouched)
 

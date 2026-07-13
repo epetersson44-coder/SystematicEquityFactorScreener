@@ -122,3 +122,12 @@ ok = (df.can_exs.median() > df.base_exs.median()
       and df.can_dd.median() >= df.base_dd.median())
 print(f"\nVERDICT vs pre-registered bar: "
       f"{'STAGE-1 PASS -> pre-register the OOS annex before ANY further claim' if ok else 'FAIL -> ledger + bank'}")
+
+# RESULTS (run 2026-07-13, unmodified from pre-registration 64f6f88; honest convention):
+#   baseline blend   exSharpe med 0.767 [0.720,0.818]  maxDD med -16.9%
+#   canary-gated     exSharpe med 0.844 [0.740,0.945]  maxDD med -13.0%  naive med 1.054
+#   STAGE-1 PASS on all three legs — the largest in-sample margin any variant has ever
+#   shown (+0.077 median exSharpe AND 3.9pts shallower DD). Pre-run expectation (lean
+#   FAIL on bull lag) was WRONG in-sample. Per the pre-registered bar, no claim until
+#   stage 2 — see 2026-07-13_canary_oos.py (pre-reg e9829df): OOS PASSED (thinly).
+#   Combined verdict lives in the OOS file. Ledger: naive 1.05 -> TRIAL_SHARPES.

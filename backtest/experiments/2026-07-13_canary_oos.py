@@ -132,3 +132,20 @@ ok = (df.can_exs.median() > df.base_exs.median()
       and df.can_dd.median() >= df.base_dd.median())
 print(f"\nVERDICT vs pre-registered bar: "
       f"{'OOS PASS -> design call at a FUTURE lock (no auto-adoption)' if ok else 'FAIL -> in-sample-only, banked (the DMOM outcome)'}")
+
+# RESULTS (run 2026-07-13, unmodified from pre-registration e9829df):
+#   canary-proxy validation: VEIEX->EEM corr 0.94; VBMFX->AGG corr 0.79 (below the
+#   ~0.9 the header hoped for — acceptable for a SIGN-based gate, noted honestly).
+#   baseline blend   exSharpe med 0.615 [0.486,0.682]  maxDD med -9.1%
+#   canary-gated     exSharpe med 0.623 [0.496,0.690]  maxDD med -7.7%
+#   OOS PASS on all three legs — the first candidate to survive BOTH stages (DMOM died
+#   here). HONEST MAGNITUDE READ: in-sample +0.077 exSharpe/-3.9pts DD decays to
+#   +0.008/-1.4pts OOS. Direction robust, size regime-dependent: the 2006-26 margin is
+#   flattered by canary-friendly crashes (2008/2020/2022); the floor looks like
+#   "harmless, mildly DD-protective." VERDICT per pre-registration: graduates to a
+#   DESIGN CALL at the AUGUST 2026 lock, no auto-adoption. SCOPE NOTE for that call:
+#   what passed is a BLEND-construction upgrade (equity-leg gate) — the shadow 2.3x
+#   would inherit it via the locks. It is NOT evidence for gating ssoB's UPRO leg:
+#   that book's thesis is beat-SPY-RAW, and e<1 months cut raw return in bulls — the
+#   ssoB defensive step-down failed exactly there. An ssoB-level gate would need its
+#   own experiment against its own thesis.
