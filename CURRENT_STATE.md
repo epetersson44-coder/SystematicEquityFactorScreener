@@ -216,10 +216,10 @@ than any disputed signal idea of the review gauntlet.*
   the sixth review, which correctly quoted SCOREBOARD.md's own "the honest one is the
   truth" back at us):** cash at real ^IRX in the engine + excess-return Sharpes. Blend
   **0.78 vs SPY 0.57 (gap +0.22)**, bootstrap p(luck) **5.1%** (stable at 63/126d blocks),
-  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.83 at ledger N=48 →
-  0.77 @N=75 → 0.74 @N=100 paranoia** (recomputed 2026-07-10 on the median-offset
-  implementable book — the same curve as the quoted 0.78 — after the ledger grew to 48;
-  rf=0 ledger hurdle — conservative mix). Survived its pre-registered
+  DSR quoted as a RANGE per the lower-bound ledger honesty: **0.82 at ledger N=50 →
+  0.77 @N=75 → 0.73 @N=100 paranoia** (recomputed 2026-07-13 on the median-offset
+  implementable book — the same curve as the quoted 0.78 — after the canary/HRP trials
+  took the ledger to 50; rf=0 ledger hurdle — conservative mix). Survived its pre-registered
   re-headline rule (gap ≥ +0.15, p ≤ 0.10) — but these honest numbers are the QUOTABLE
   ones now; the naive row stays for ledger comparability only. Implementable book (single
   offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
