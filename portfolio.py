@@ -38,11 +38,26 @@ WIKI_PORTFOLIO = "/Users/erik.petersson/Library/Mobile Documents/iCloud~md~obsid
 
 
 def fetch_prices(tickers):
+    # Sanity guard (added go-live day, 2026-07-13): Yahoo's live-quote endpoint
+    # returned a junk $80.00 for SPLG (real ~$89) while the daily-history close was
+    # correct — the page showed a phantom -10% on a flat day. If the live quote
+    # deviates >15% from the last daily close, trust the close and say so. A real
+    # >15% single-day move on these ETFs is a 2008-class event; a wrong quote is
+    # a Tuesday.
     prices = {}
     for ticker in tickers:
         try:
             t = yf.Ticker(ticker)
-            price = t.fast_info["last_price"]
+            price = float(t.fast_info["last_price"])
+            try:
+                hist = t.history(period="5d")["Close"].dropna()
+                close = float(hist.iloc[-1]) if len(hist) else None
+            except Exception:                               # noqa: BLE001
+                close = None
+            if close and abs(price / close - 1) > 0.15:
+                print(f"  {ticker}: live quote {price:.2f} deviates >15% from last close "
+                      f"{close:.2f} — vendor glitch, using the close")
+                price = close
             prices[ticker] = round(price, 2)
         except Exception as e:
             print(f"  Could not fetch {ticker}: {e}")
