@@ -140,6 +140,22 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   the same measurement settles the cash account: raising `target_vol` there adds exposure
   only in the ~20% concentrated/crisis months where the TARGET binds, so **no in-cash-account
   vol-target headroom exists**. Closed [EMPIRICAL], banked for the 2.3× era's sleeve design.
+- **Global repo sweep, 2026-07-12 (pre-go-live; ~30 repos, US/UK/DE/FR/CN/RU/JP/KR):**
+  no construction found that dominates GTAA-class trend+RP at this lab's constraints — the
+  serious labs (Carver, Keller family, AQR lineage) converge on the primitives already live
+  here. Candidates banked WITH PRIORS, none touching the live book: (1) **canary-asset
+  gating** (Keller VAA/DAA — gate aggression on fast momentum of EEM+BND breadth, not
+  own-asset trend): the one genuinely new mechanism; moderate-low prior (published 2018,
+  decay applies); test = two-stage pre-reg with dot-com proxy OOS, worth one ledger trial.
+  (2) **HRP/HERC weighting** vs inverse-vol (via skfolio-style clustering, reimplemented
+  natively): wash prior at 6 assets. (3) **Carver position buffering** (no-trade bands):
+  wash-tier at monthly cadence, ~1–3bps. (4) **RSRS timing** (光大 support/resistance
+  regression slope, QuantsPlaybook reproductions): best Chinese export, low prior — US
+  timing trials all died. Tooling notes: **QuantConnect Lean** upgrades the banked
+  clean-room replication (independent engine AND data vendor in one); **pysystemtrade**
+  (Carver) is the Rung-3 futures-era reference implementation (in the playbook);
+  **OpenSourceAP/CrossSection** (Chen–Zimmermann, 200+ replicated anomalies w/ code+data)
+  is the revival reference if the retired factor path ever reopens.
 
 ## Implementation alpha — banked ops/tax/financing upgrades (signals untouched)
 
