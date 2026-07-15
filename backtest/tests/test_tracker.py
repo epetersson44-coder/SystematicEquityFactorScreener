@@ -541,6 +541,25 @@ def test_desk_book_dollar_neutral_pnl_rides_on_cash():
     assert abs(b["final"] - 10_500.0) < 1e-6                # +10% on the $5k long leg
 
 
+def test_impl_gap_twin_scales_flows_from_anchors():
+    # The pure core of the implementation-gap twin: each flow compounds from its own
+    # anchor date, so a later deposit doesn't masquerade as performance.
+    import numpy as np
+    from backtest.impl_gap import _twin_from
+    idx = pd.bdate_range("2026-07-13", periods=40)
+    curve = pd.Series(10_000.0 * (1.01 ** np.arange(40)), index=idx)   # +1%/day
+    flows = [("2026-07-13", 10_000.0)]
+    # single flow: twin == flow grown by the curve
+    assert abs(_twin_from(curve, flows) / (10_000.0 * 1.01 ** 39) - 1) < 1e-12
+    # second flow half-way: grows only from ITS anchor
+    flows2 = flows + [(idx[20].date().isoformat(), 5_000.0)]
+    expect = 10_000.0 * 1.01 ** 39 + 5_000.0 * 1.01 ** 19
+    assert abs(_twin_from(curve, flows2) / expect - 1) < 1e-12
+    # asof clipping: value at an intermediate date uses that date's curve level
+    mid = _twin_from(curve, flows, asof=idx[10])
+    assert abs(mid / (10_000.0 * 1.01 ** 10) - 1) < 1e-12
+
+
 def test_band_trades_buffered_rebalance():
     # The pure core of rebalance_orders (adopted 2026-07-13, buffer_frac=0.10):
     # within-band legs hold, outside-band legs trade to the NEAREST EDGE, dropped
