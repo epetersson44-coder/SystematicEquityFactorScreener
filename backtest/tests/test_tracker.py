@@ -541,6 +541,23 @@ def test_desk_book_dollar_neutral_pnl_rides_on_cash():
     assert abs(b["final"] - 10_500.0) < 1e-6                # +10% on the $5k long leg
 
 
+def test_mechanism_book_beta_identities():
+    # The crisis gauge's beta: SPY-only book -> beta 1, UPRO-only -> 3 (3x SPY),
+    # SGOV ignored, a 50/50 SPY/cash book -> 0.5.
+    import numpy as np
+    from backtest.mechanism import book_beta
+    rng = np.random.default_rng(7)
+    idx = pd.bdate_range("2025-01-01", periods=80)
+    spy_ret = rng.normal(0.0005, 0.01, len(idx))
+    closes = pd.DataFrame({"SPY": 100 * np.cumprod(1 + spy_ret),
+                           "IEF": 100 * np.cumprod(1 + rng.normal(0, 0.003, len(idx)))},
+                          index=idx)
+    i = len(closes) - 1
+    assert abs(book_beta({"SPY": 1.0}, closes, i) - 1.0) < 1e-9
+    assert abs(book_beta({"UPRO": 1.0}, closes, i) - 3.0) < 1e-9
+    assert abs(book_beta({"SPY": 0.5, "SGOV": 0.5}, closes, i) - 0.5) < 1e-9
+
+
 def test_impl_gap_twin_scales_flows_from_anchors():
     # The pure core of the implementation-gap twin: each flow compounds from its own
     # anchor date, so a later deposit doesn't masquerade as performance.
