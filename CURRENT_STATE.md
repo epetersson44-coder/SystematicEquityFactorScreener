@@ -180,8 +180,11 @@ a POLICY closure as if it were refuted statistically, or vice versa.*
   "harmless, mildly DD-protective"). **Scope:** a BLEND-construction upgrade (the shadow
   2.3× inherits it via locks) — NOT evidence for gating ssoB's UPRO leg, whose
   beat-SPY-raw thesis the e<1 months would bleed (the defensive step-down failed exactly
-  there); an ssoB gate needs its own experiment. August agenda: adopt/decline for the
-  blend paper book, priced with turnover (+|Δe| monthly) and the paper-book-only stakes.
+  there); an ssoB gate needs its own experiment. August agenda: DESIGN MEMO written 2026-07-15
+  (wiki quant-desk, "Design call: the canary gate") four weeks ahead so August's market
+  mood can't cast the vote — recommendation on record: **Option C, a parallel `blend_c`
+  paper book** (gated blend locked beside the untouched headline blend; live A/B accrues
+  evidence for the margin-era construction choice at zero real cost).
   (`backtest/experiments/2026-07-13_canary_gate.py` + `_canary_oos.py`)
 
 ## Implementation alpha — banked ops/tax/financing upgrades (signals untouched)
