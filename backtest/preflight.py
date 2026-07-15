@@ -11,10 +11,12 @@
 #   3. Live tickers priceable — UPRO / SGOV / SPLG / IAU / PDBC (every real-account
 #      leg incl. the REAL_SUBS substitutes) return a quote.
 #   4. T-bill series health — ^IRX cache reaches near-present (shadow-book financing).
-#   5. Independent-vendor cross-check — SPY's latest close vs Stooq (free, separate
-#      infrastructure from Yahoo). Catches a corrupted/adjusted-weird vendor feed —
-#      the one Data-grade improvement available without paying for data: we can't buy
-#      breadth, but we can verify what we get. Network-tolerant (WARN if unreachable).
+#   5. Independent-vendor cross-check — every live ticker's close vs Cboe's exchange
+#      feed (keyless), plus ~2yr of adjusted return history vs Tiingo when TIINGO_KEY
+#      is set (free key). Catches a corrupted/adjusted-weird vendor feed — the one
+#      Data-grade improvement available without paying for data: we can't buy breadth,
+#      but we can verify what we get. Network-tolerant (WARN if unreachable).
+#      (Stooq retired 2026-07-15: its CSV endpoint went behind a JS bot wall.)
 
 import sys
 import datetime as dt
@@ -75,67 +77,94 @@ def check_tbills():
     return True, f"T-bill series healthy (rf={last:.2%})"
 
 
-def stooq_close(symbol="spy.us"):
-    """Latest daily close from Stooq (independent vendor). Raises on failure."""
-    px = stooq_history(symbol)
-    return float(px.iloc[-1]), px.index[-1]
-
-
-def stooq_history(symbol="spy.us"):
-    """Full daily close history from Stooq (one request — the CSV is always complete).
-    Raises on failure."""
-    import io
+def cboe_spot(symbol):
+    """(current_price, prev_close) from Cboe's keyless delayed-quotes JSON — an
+    EXCHANGE-operated source, independent of any market-data reseller. Raises on
+    failure. (Replaced Stooq 2026-07-15: Stooq put its CSV endpoint behind a
+    JavaScript bot-verification wall; we do not script around bot checks.)"""
     import requests
-    r = requests.get(f"https://stooq.com/q/d/l/?s={symbol}&i=d", timeout=15)
+    r = requests.get(f"https://cdn.cboe.com/api/global/delayed_quotes/quotes/{symbol}.json",
+                     timeout=15, headers={"User-Agent": "Mozilla/5.0"})
     r.raise_for_status()
-    df = pd.read_csv(io.StringIO(r.text), parse_dates=["Date"]).set_index("Date")
-    return df["Close"].dropna()
+    d = r.json()["data"]
+    cur = float(d["current_price"])
+    prev = cur - float(d.get("price_change") or 0.0)
+    return cur, prev
+
+
+def tiingo_history(symbol, token, days=520):
+    """Adjusted daily closes from Tiingo (free API key, tiingo.com). Raises on failure."""
+    import datetime as _dt
+    import requests
+    start = (_dt.date.today() - _dt.timedelta(days=int(days * 1.6))).isoformat()
+    r = requests.get(f"https://api.tiingo.com/tiingo/daily/{symbol}/prices",
+                     params={"startDate": start, "token": token, "columns": "date,adjClose"},
+                     timeout=20)
+    r.raise_for_status()
+    rows = r.json()
+    s = pd.Series({pd.Timestamp(x["date"]).tz_localize(None).normalize(): float(x["adjClose"])
+                   for x in rows}).sort_index()
+    return s.dropna()
 
 
 def check_cross_vendor(tolerance=0.01, hist_days=500, ret_corr_min=0.98, ret_med_bps=10):
-    """EVERY live signal input (6 sleeve ETFs + UPRO) vs Stooq — latest price within 1%
-    AND the last ~2 years of DAILY RETURNS in agreement (corr + median |diff|). The
-    history leg (seventh review) catches the failure the spot check cannot: a silently
+    """EVERY live signal input (6 sleeve ETFs + UPRO) vs independent vendors.
+    Leg 1 (SPOT, keyless, always on): latest close vs Cboe's exchange feed — deviation
+    measured against the CLOSER of Cboe's current and previous close (our panel ends at
+    a close; Cboe quotes move intraday). Leg 2 (HISTORY, needs TIINGO_KEY env var —
+    free key): last ~2 years of DAILY RETURNS vs Tiingo adjusted closes (corr + median
+    |diff|). The history leg (seventh review) catches what spot cannot: a silently
     corrupted adjusted HISTORY (bad dividend/split factor) that leaves today's price
-    fine while every trend signal computed from the past 12 months is wrong.
-    Return comparison is robust to the known benign difference (Stooq closes are
-    dividend-UNadjusted; Yahoo's are adjusted): ex-div days are a handful of outliers
-    per year, so corr and MEDIAN tolerate them while a shifted history does not.
-    WARN (not FAIL) if Stooq is unreachable — it rate-limits; SPY probes first."""
+    fine while every trend signal computed from the past 12 months is wrong — the
+    go-live-day SPLG junk quote was this failure class's little sibling.
+    WARN (not FAIL) when a vendor is unreachable or the key is absent."""
+    import os
     from backtest.trend_sleeve import etf_panel, ETFS
-    try:
-        spy_hist = stooq_history("spy.us")
-    except Exception as e:                                 # noqa: BLE001
-        return None, f"Stooq unreachable ({type(e).__name__}) — cross-check skipped"
     closes = etf_panel()["Close"]
     import yfinance as yf
     live = yf.download("UPRO", period="2y", progress=False, auto_adjust=True)["Close"]
     upro = live["UPRO"] if hasattr(live, "columns") else live
-    bad, checked = [], 0
-    for tkr, pre in [("SPY", spy_hist)] + [(t, None) for t in ETFS if t != "SPY"] + [("UPRO", None)]:
-        try:
-            s_hist = pre if pre is not None else stooq_history(f"{tkr.lower()}.us")
-        except Exception:                                  # noqa: BLE001
-            continue                                       # symbol-level skip, not a verdict
+    token = os.environ.get("TIINGO_KEY", "").strip()
+    tickers = list(ETFS) + ["UPRO"]
+    bad, spot_ok, hist_ok, unreachable = [], 0, 0, 0
+    for tkr in tickers:
         y_ser = (upro if tkr == "UPRO" else closes[tkr]).dropna()
-        s_date = s_hist.index[-1]
-        if s_date in y_ser.index:                          # leg 1: spot within 1%
-            dev = abs(float(y_ser.loc[s_date]) / float(s_hist.iloc[-1]) - 1)
+        ours = float(y_ser.iloc[-1])
+        try:                                               # leg 1: Cboe spot
+            cur, prev = cboe_spot(tkr)
+            dev = min(abs(ours / cur - 1), abs(ours / prev - 1) if prev else 9)
             if dev > tolerance:
-                bad.append(f"{tkr} spot {s_date.date()} off {dev:.2%}")
-        both = pd.concat([y_ser.rename("y"), s_hist.rename("s")], axis=1).dropna().tail(hist_days)
-        if len(both) >= 250:                               # leg 2: return-history agreement
-            r = both.pct_change().dropna()
-            corr = float(r["y"].corr(r["s"]))
-            med = float((r["y"] - r["s"]).abs().median()) * 1e4
-            if corr < ret_corr_min or med > ret_med_bps:
-                bad.append(f"{tkr} HISTORY divergence (corr {corr:.3f}, med {med:.1f}bps "
-                           f"over {len(r)}d) — adjusted history suspect")
-        checked += 1
+                bad.append(f"{tkr} spot off {dev:.2%} vs Cboe")
+            else:
+                spot_ok += 1
+        except Exception:                                  # noqa: BLE001
+            unreachable += 1
+        if token:                                          # leg 2: Tiingo history
+            try:
+                t_hist = tiingo_history(tkr, token, hist_days)
+            except Exception:                              # noqa: BLE001
+                unreachable += 1
+                continue
+            both = pd.concat([y_ser.rename("y"), t_hist.rename("t")], axis=1).dropna().tail(hist_days)
+            if len(both) >= 250:
+                r = both.pct_change().dropna()
+                corr = float(r["y"].corr(r["t"]))
+                med = float((r["y"] - r["t"]).abs().median()) * 1e4
+                if corr < ret_corr_min or med > ret_med_bps:
+                    bad.append(f"{tkr} HISTORY divergence (corr {corr:.3f}, med {med:.1f}bps "
+                               f"over {len(r)}d) — adjusted history suspect")
+                else:
+                    hist_ok += 1
     if bad:
         return False, "VENDOR DISAGREEMENT — " + "; ".join(bad)
-    return True, (f"cross-vendor OK: {checked} tickers, spot within {tolerance:.0%} and "
-                  f"~{hist_days}d return history in agreement")
+    if spot_ok == 0:
+        return None, "no independent vendor reachable — cross-check skipped"
+    msg = f"cross-vendor OK: {spot_ok}/{len(tickers)} spots within {tolerance:.0%} (Cboe)"
+    if token:
+        msg += f", {hist_ok} return histories in agreement (Tiingo)"
+    else:
+        msg += " — HISTORY leg off: set TIINGO_KEY (free key, tiingo.com) to enable the strongest data check"
+    return True, msg
 
 
 def run(refresh=True):

@@ -59,6 +59,19 @@ def etf_panel(tickers=ETFS, refresh=False):
         #                                                       against the silent-stale-universe bug)
     os.makedirs(CACHE_DIR, exist_ok=True)
     panels = download_panel(tickers, fields=("Close", "Open"), start=TREND_START)
+    # Never persist a DEGRADED refresh (2026-07-15: a flaky Yahoo pre-market pull wrote
+    # an all-NaN trailing row into the cache). Trailing rows with ANY missing ticker are
+    # dropped before caching — a partial last bar is a feed hiccup, not data — and if
+    # the trimmed result still ends EARLIER than the existing cache, keep the cache.
+    while len(panels["Close"]) and panels["Close"].iloc[-1].isna().any():
+        panels = {f: p.iloc[:-1] for f, p in panels.items()}
+    if os.path.exists(paths["Close"]) and len(panels["Close"]):
+        old = pd.read_csv(paths["Close"], index_col=0, parse_dates=True)
+        ok_old = old.dropna(how="any")
+        if len(ok_old) and ok_old.index[-1] > panels["Close"].index[-1]:
+            print(f"[etf_panel] refresh ends {panels['Close'].index[-1].date()} but cache "
+                  f"reaches {ok_old.index[-1].date()} — keeping the better cache")
+            return {f: pd.read_csv(p, index_col=0, parse_dates=True) for f, p in paths.items()}
     for f, p in panels.items():
         p.to_csv(paths[f])
     return panels
