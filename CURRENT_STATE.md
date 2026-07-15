@@ -235,6 +235,22 @@ than any disputed signal idea of the review gauntlet.*
   offset, expanding RP, monthly mix costs): median 0.78 [0.73, 0.83] ≈ the tranche —
   the live construction sacrifices ~nothing to the design ideal.
   (`backtest/experiments/2026-07-05_honest_convention.py`)
+- **Clean-room replica (2026-07-15, `backtest/replica.py` — run `python -m backtest.replica`):**
+  an independent reimplementation of everything real money rides on (sleeve signals, the
+  daily sim with next-open fills/costs/cash, the RP blend, the ssoB lock construction) —
+  value-based holdings vs the engine's shares, formulas re-derived from the spec, engine
+  imported ONLY as the reference. First run: **sleeve and blend curves agree with the
+  engine to correlation 1.00000 and terminal ratio 1.0000 over 20 years** (T2/T3), and T1
+  caught a real finding: the July lock's weights CANNOT be reproduced from a re-fetch —
+  yfinance re-based history within 48h and flipped IEF's knife-edge 21d vote (+0.0x% →
+  −0.10%), ~15 weight points of drift. Data-vintage effect, not an engine bug. Fixes:
+  locks now embed a **signal_snapshot** (the 64-close window + look prices per sleeve
+  ETF) so every lock from Aug 2026 is byte-verifiable forever on the data it actually
+  saw (reconstruction verified EXACT against the live formula), and lock-day output now
+  flags **knife-edge votes** (any look return within 0.5% of zero) — the live counterpart
+  of the timing-luck sweep. Honesty caveat stated in the file: same author as the engine —
+  independent implementation, not independent implementer; the Lean third-party rung
+  remains banked.
 - **Ninth review response (2026-07-10, `03a3aa0` + the sleeve-gross experiment):** 11
   findings verified against code, 10 real — the gauntlet's best hit rate (rounds 7–8 had
   decayed to recycled/fabricated claims; this reviewer cited real internals). Fixed: momentum

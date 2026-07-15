@@ -424,6 +424,33 @@ def lock(strategy="momentum", refresh=False):
         # unambiguously the risk-off T-bill lock; n==0 is the SGOV-unpriceable fallback
         rec["regime"] = ("risk_off (SGOV)" if set(rec["picks"]) == {"SGOV"}
                          else "risk_on" if rec["n"] else "risk_off (cash)")
+    if strategy in ("blend", "sso_stack"):
+        # SIGNAL SNAPSHOT (2026-07-15, replica finding): yfinance re-bases adjusted
+        # history whenever a distribution posts, so a lock's signal inputs are NOT
+        # reproducible from a later re-fetch — the July lock had an IEF 21d return of
+        # ~+0.0x% that read -0.10% two days later, flipping a trend vote and ~15 weight
+        # points. Embed the decision's sufficient statistics (the trailing 64 closes
+        # per sleeve ETF + each look-back price) so backtest.replica can byte-verify
+        # THIS lock forever, on the data it actually saw. Also flag KNIFE-EDGE votes
+        # (any look return within 0.5% of zero) — the live counterpart of the
+        # timing-luck sweep: it tells the operator this month's weights were close
+        # to being different.
+        from backtest.trend_sleeve import etf_panel, ETFS, ENSEMBLE_LOOKS
+        pc = etf_panel()["Close"]
+        j = len(pc) - 1
+        snap, edges = {}, []
+        for t in ETFS:
+            snap[t] = {"window64": [round(float(x), 6) for x in pc[t].iloc[j - 63:j + 1]],
+                       "looks": {str(lk): round(float(pc[t].iloc[j - lk]), 6)
+                                 for lk in ENSEMBLE_LOOKS}}
+            for lk in ENSEMBLE_LOOKS:
+                r = float(pc[t].iloc[j]) / float(pc[t].iloc[j - lk]) - 1
+                if abs(r) < 0.005:
+                    edges.append(f"{t} {lk}d {r:+.2%}")
+        rec["signal_snapshot"] = {"asof": pc.index[j].date().isoformat(), "closes": snap}
+        if edges:
+            rec["knife_edges"] = edges
+            print(f"  KNIFE-EDGE votes this lock (timing luck is live): {'; '.join(edges)}")
     out_dir = os.path.join(PICKS_DIR, strategy)
     os.makedirs(out_dir, exist_ok=True)
     month = rec["lock_date"][:7]                          # one lock per calendar month
