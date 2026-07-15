@@ -541,6 +541,37 @@ def test_desk_book_dollar_neutral_pnl_rides_on_cash():
     assert abs(b["final"] - 10_500.0) < 1e-6                # +10% on the $5k long leg
 
 
+def test_lots_derive_hifo_and_terms():
+    # The lot ledger's pure core: HIFO consumption, ST/LT classification (>1yr),
+    # oversell detection.
+    from backtest.lots import derive
+    journal = [
+        {"date": "2025-01-10", "side": "BUY", "ticker": "X", "shares": 10.0, "dollars": 1000.0},
+        {"date": "2026-06-01", "side": "BUY", "ticker": "X", "shares": 10.0, "dollars": 1500.0},
+        {"date": "2026-07-01", "side": "SELL", "ticker": "X", "shares": 5.0, "dollars": 800.0},
+    ]
+    open_lots, realized = derive(journal)
+    # HIFO: the 2026 lot (basis 150/sh) is consumed first
+    assert len(realized) == 1 and realized[0]["term"] == "ST"       # held < 1yr
+    assert abs(realized[0]["basis"] - 750.0) < 1e-9                 # 5 sh x $150
+    assert abs(realized[0]["gain"] - 50.0) < 1e-9                   # 800 - 750
+    assert abs(sum(l["shares"] for l in open_lots) - 15.0) < 1e-9
+    # selling the old lot after >1yr is LT
+    journal2 = journal + [{"date": "2026-07-02", "side": "SELL", "ticker": "X",
+                           "shares": 10.0, "dollars": 1600.0}]
+    _, realized2 = derive(journal2)
+    terms = sorted(r["term"] for r in realized2[1:])                # 5 sh 2026-lot + 5 sh 2025-lot
+    assert terms == ["LT", "ST"]
+    # oversell raises
+    journal3 = journal + [{"date": "2026-07-03", "side": "SELL", "ticker": "X",
+                           "shares": 99.0, "dollars": 9.9}]
+    try:
+        derive(journal3)
+        raise AssertionError("expected oversell ValueError")
+    except ValueError:
+        pass
+
+
 def test_mechanism_book_beta_identities():
     # The crisis gauge's beta: SPY-only book -> beta 1, UPRO-only -> 3 (3x SPY),
     # SGOV ignored, a 50/50 SPY/cash book -> 0.5.

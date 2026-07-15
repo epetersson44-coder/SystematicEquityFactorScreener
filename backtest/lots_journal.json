@@ -1,0 +1,58 @@
+[
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "UPRO",
+  "shares": 28.4387,
+  "dollars": 4086.5,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "SPLG",
+  "shares": 26.3302,
+  "dollars": 2339.44,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "IEF",
+  "shares": 21.6572,
+  "dollars": 2022.35,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "EFA",
+  "shares": 17.0342,
+  "dollars": 1764.4,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "TLT",
+  "shares": 13.5146,
+  "dollars": 1136.44,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "PDBC",
+  "shares": 29.0268,
+  "dollars": 485.62,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ },
+ {
+  "date": "2026-07-13",
+  "side": "BUY",
+  "ticker": "IAU",
+  "shares": 5.6303,
+  "dollars": 424.75,
+  "note": "go-live deployment (dollar orders, sheet shares)"
+ }
+]
