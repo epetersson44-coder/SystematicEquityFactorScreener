@@ -18,11 +18,18 @@
 #      but we can verify what we get. Network-tolerant (WARN if unreachable).
 #      (Stooq retired 2026-07-15: its CSV endpoint went behind a JS bot wall.)
 
+import os
 import sys
 import datetime as dt
 
 import numpy as np
 import pandas as pd
+
+try:                                                       # secrets live in repo-root .env
+    from dotenv import load_dotenv                         # (gitignored): TIINGO_KEY=...
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
+except ImportError:                                        # dotenv optional — env vars still work
+    pass
 
 STALE_BDAYS = 5
 
