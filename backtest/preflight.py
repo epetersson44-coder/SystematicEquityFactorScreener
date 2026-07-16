@@ -57,21 +57,45 @@ def check_live_tickers(tickers=None):
     """Default covers EVERY ticker real money actually trades: UPRO/SGOV plus the
     REAL_SUBS substitutes (SPLG/IAU/PDBC). Before this the docstring said 'the
     real-account legs' while checking only UPRO/SGOV — an unpriceable IAU surfaced as a
-    RuntimeError mid-shopping_list at lock time instead of here (ninth review, F4)."""
+    RuntimeError mid-shopping_list at lock time instead of here (ninth review, F4).
+    Vendor redundancy (2026-07-15, after Yahoo's SPLG feed stayed broken 3 days): a
+    ticker Yahoo can't price but Cboe can is a PASS with a note — the order path
+    (tracker.live_price) carries the same fallback. FAIL only when BOTH vendors fail."""
     from backtest.data import get_prices
     if tickers is None:
         from backtest.tracker import REAL_SUBS
         tickers = ("UPRO", "SGOV", *REAL_SUBS.values())
-    bad = []
+    bad, degraded = [], []
     for t in tickers:
         try:
             px = float(get_prices(t, refresh=True)["Close"].iloc[-1])
-            if not (np.isfinite(px) and px > 0):
-                bad.append(t)
+            if np.isfinite(px) and px > 0:
+                continue
         except Exception:                                  # noqa: BLE001
-            bad.append(t)
-    return (not bad), ("live tickers priced: " + ", ".join(tickers) if not bad
-                       else f"unpriceable: {bad}")
+            pass
+        try:                                               # Yahoo failed -> Cboe fallback
+            cur, _ = cboe_spot(t)
+            if np.isfinite(cur) and cur > 0:               # Cboe zero-quotes unlisted ETFs
+                degraded.append(t)
+                continue
+        except Exception:                                  # noqa: BLE001
+            pass
+        token = os.environ.get("TIINGO_KEY", "").strip()
+        if token:
+            try:                                           # -> Tiingo daily close
+                s = tiingo_history(t, token, days=7)
+                if len(s) and float(s.iloc[-1]) > 0:
+                    degraded.append(t)
+                    continue
+            except Exception:                              # noqa: BLE001
+                pass
+        bad.append(t)
+    if bad:
+        return False, f"unpriceable on EVERY vendor: {bad}"
+    msg = "live tickers priced: " + ", ".join(tickers)
+    if degraded:
+        msg += f" ({', '.join(degraded)} via fallback vendor — Yahoo degraded)"
+    return True, msg
 
 
 def check_tbills():

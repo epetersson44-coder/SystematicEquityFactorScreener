@@ -156,6 +156,38 @@ REAL_SUBS = {"GLD": "IAU", "DBC": "PDBC", "SPY": "SPLG"}
 BUFFER_FRAC = 0.10
 
 
+def live_price(ticker, refresh=True):
+    """Live price for ORDER SIZING with vendor redundancy: Yahoo -> Cboe exchange
+    quote -> Tiingo daily close (added 2026-07-15 — Yahoo's SPLG feed stayed broken
+    3 days, and Cboe's free feed turned out to zero-quote non-Cboe-listed ETFs like
+    SPLG, so the chain needs all three; a rebalance must not depend on one vendor
+    healing). Delayed/EOD quotes are fine here: dollar-based orders only use the
+    price to ESTIMATE share counts. Raises only when every link fails."""
+    try:
+        px = float(get_prices(ticker, refresh=refresh)["Close"].iloc[-1])
+        if np.isfinite(px) and px > 0:
+            return px
+    except Exception:                                      # noqa: BLE001
+        pass
+    from backtest.preflight import cboe_spot, tiingo_history
+    try:
+        px, _ = cboe_spot(ticker)
+        if np.isfinite(px) and px > 0:                     # Cboe zero-quotes unlisted ETFs
+            print(f"[tracker] {ticker}: Yahoo unpriceable — using Cboe quote {px:.2f}")
+            return px
+    except Exception:                                      # noqa: BLE001
+        pass
+    token = os.environ.get("TIINGO_KEY", "").strip()
+    if token:
+        s = tiingo_history(ticker, token, days=7)          # raises on failure
+        px = float(s.iloc[-1])
+        if np.isfinite(px) and px > 0:
+            print(f"[tracker] {ticker}: Yahoo+Cboe unpriceable — using Tiingo close "
+                  f"{px:.2f} ({s.index[-1].date()})")
+            return px
+    raise RuntimeError(f"live_price: {ticker} unpriceable on every vendor")
+
+
 def _band_trades(cur_val, tgt_val, frac=BUFFER_FRAC):
     """Pure buffered-rebalance core: {ticker: current $} + {ticker: target $} ->
     {ticker: signed trade $} (zero-dollar legs omitted). Within-band legs are held;
@@ -191,7 +223,7 @@ def rebalance_orders(holdings, cash, book="sso_stack", frac=BUFFER_FRAC,
         if t in prices.index and np.isfinite(prices[t]) and t not in subs.values():
             px[t] = float(prices[t])
         else:
-            px[t] = float(get_prices(t, refresh=refresh)["Close"].iloc[-1])
+            px[t] = live_price(t, refresh=refresh)
         if not (np.isfinite(px[t]) and px[t] > 0):
             raise RuntimeError(f"rebalance_orders: no live price for {t}")
     cur_val = {t: sh * px[t] for t, sh in holdings.items()}
@@ -234,7 +266,7 @@ def shopping_list(capital, book="sso_stack", refresh=True, fractional=True, subs
     for t, w in weights.sort_values(ascending=False).items():
         tt = subs.get(t, t)
         if tt != t:
-            px = float(get_prices(tt, refresh=refresh)["Close"].iloc[-1])
+            px = live_price(tt, refresh=refresh)
         else:
             px = float(prices[t])
         if not (np.isfinite(px) and px > 0):
@@ -247,7 +279,7 @@ def shopping_list(capital, book="sso_stack", refresh=True, fractional=True, subs
                      "price": round(px, 2), "shares": sh, "est_cost_$": round(cost, 2)})
     residue = capital - spent
     if residue > 1.0:
-        sgov = float(get_prices("SGOV", refresh=refresh)["Close"].iloc[-1])
+        sgov = live_price("SGOV", refresh=refresh)
         sh = round(residue / sgov, 4) if fractional else int(residue // sgov)
         if sh > 0:
             # ONE row per ticker on the order sheet: books that park cash in SGOV via
@@ -347,7 +379,7 @@ def _park_cash(net, prices, cash_etf, refresh=False):
     resid = 1.0 - float(net.sum())
     if cash_etf and resid > 0.005:
         try:
-            px = float(get_prices(cash_etf, refresh=refresh)["Close"].iloc[-1])
+            px = live_price(cash_etf, refresh=refresh)
             if np.isfinite(px) and px > 0:
                 net[cash_etf] = resid
                 prices[cash_etf] = px
