@@ -28,7 +28,11 @@ in DRAWDOWN, −16%→−35%, not efficiency), maxDD −35%, $10k→$176k. Domin
 12.3%) on every honest axis; purely capital-gated. **Open design
 question, deferred to that era's first lock: tail management at 2.3× (synthetic tails
 −70%+). Known dials, cheapest first: size 1.8–2.0× (synthetic median maxDD mid-30s, per
-`leverage_study.py`), vol-target the leverage (dynamic L ≤ 2.3), the banked DBMF slice.
+`leverage_study.py`), the banked DBMF slice. Dynamic vol-targeted leverage is CLOSED
+[EMPIRICAL] (2026-07-15, pre-reg `51a4d8b`): kept 70% of the terminal for 3.8pts DD,
+DOMINATED by constant 2.0× — the sleeve already vol-manages internally, so tail
+management is a LADDER CHOICE, not an overlay. Margin arithmetic pre-computed (playbook):
+2.3× PM breach needs a −33.5% intra-month blend move vs −6.9% worst month in 20yrs.
 A real put/collar overlay study requires REAL options data (OptionMetrics/ORATS-class,
 paid) — simulating option prices from VIX rules-of-thumb is fabrication and will not be
 done; that subscription is the first legitimate paid-data unlock of the margin era. The

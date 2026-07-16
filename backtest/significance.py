@@ -201,6 +201,11 @@ TRIAL_SHARPES = [
             # original Everbright rule verbatim): FAILED decisively (0.638 vs 0.767
             # honest, DD deeper) — A-share daily signal doesn't survive the
             # market+frequency port; Chinese-timing question closed with receipts
+    0.86,   # dynamic vol-targeted external leverage L<=2.3 on the blend (2026-07-15,
+            # pre-reg 51a4d8b): FAILED — kept only 70% of constant-2.3x's terminal for
+            # 3.8pts DD relief, and is DOMINATED by constant 2.0x (same DD/Sharpe,
+            # $8k more pile). Vol-managing an internally vol-managed book double-charges;
+            # margin-era tail management = pick a LADDER rung, not an overlay
     # NOT a trial (no entry): the 2026-07-04 dot-com proxy extension was a two-commit
     # PRE-REGISTERED out-of-sample VALIDATION of the existing blend (bar committed before the
     # run, no selection) — blend Sharpe 0.97 vs SPY 0.11 over 1999-2006, bear DD -9.4% vs

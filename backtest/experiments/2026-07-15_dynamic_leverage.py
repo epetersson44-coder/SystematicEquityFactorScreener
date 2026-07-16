@@ -139,3 +139,23 @@ ok = (sd["exs"] >= sc["exs"] - 0.01
       and p95_d >= p95_c + 0.05)
 print(f"\nVERDICT vs pre-registered bar: "
       f"{'STAGE-1 PASS -> pre-register the OOS annex before the playbook flips' if ok else 'FAIL -> banked as a priced tail-management row'}")
+
+# RESULTS (run 2026-07-15, unmodified from pre-registration 51a4d8b; honest convention):
+#   constant 2.3x   CAGR 15.47%  exSharpe 0.76  maxDD -34.8%  $10k -> $178,174
+#   dynamic L<=2.3  CAGR 13.44%  exSharpe 0.76  maxDD -31.0%  $10k -> $125,037
+#   dynamic L: mean 2.00, at cap 45% of days, min 1.00
+#   bootstrap (N=500, 21d blocks): const p50 -38.0% / p95 -54.6%; dyn p50 -34.8% / p95 -51.6%
+#   VERDICT: FAIL (2 of 4 legs) — Sharpe held (0.76=0.76, pass) and historical DD
+#   improved 3.8pts (pass), but TERMINAL kept only 70% of the pile (bar 80%) and the
+#   p95 tail improved just 3.0pts (bar 5). Pre-run expectation (lean PASS) was WRONG —
+#   fourth author-overrule of the summer.
+#   WHY (the decision-relevant mechanism): the blend is ALREADY internally vol-managed
+#   by the sleeve — its vol is pre-compressed (8.4% ann, worst month -6.9%) — so an
+#   external Moreira-Muir overlay finds almost no vol-clustering signal left and just
+#   averages L down (mean 2.0) without timing skill. THE DOMINATION: the ladder's own
+#   constant 2.0x row ($133k, -30.8%, 0.76) beats dynamic<=2.3 ($125k, -31.0%, 0.76)
+#   on the pile at the same DD/Sharpe. Vol-managing a vol-managed book double-charges.
+#   VERDICT FOR THE PLAYBOOK: dial (e) CLOSED [EMPIRICAL] — tail management at the
+#   margin era is a LADDER CHOICE (pick L on the constant ladder; every rung is priced
+#   honestly), not an overlay. The remaining tail tools are the banked DBMF slice and
+#   the paid-options studies at that era. Ledger: naive 0.86 -> TRIAL_SHARPES.
